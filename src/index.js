@@ -16,21 +16,9 @@ const SPOTIFY_REDIRECT_URI = `${PUBLIC_BASE_URL}/spotify/callback`;
 const DATA_DIR = join(process.cwd(), "data");
 const TOKEN_PATH = join(DATA_DIR, "spotify-tokens.json");
 
-if (!BOT_TOKEN) {
-  throw new Error("Missing BOT_TOKEN. Copy .env.example to .env or set BOT_TOKEN in your environment.");
-}
-
-if (!PUBLIC_BASE_URL) {
-  throw new Error("Missing PUBLIC_BASE_URL. Telegram and Spotify need your public HTTPS base URL.");
-}
-
-if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
-  throw new Error("Missing SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET.");
-}
-
 mkdirSync(DATA_DIR, { recursive: true });
 
-const apiBase = `https://api.telegram.org/bot${BOT_TOKEN}`;
+const apiBase = BOT_TOKEN ? `https://api.telegram.org/bot${BOT_TOKEN}` : "";
 const spotifyTokens = loadJson(TOKEN_PATH, {});
 const loginStates = new Map();
 const chosenTracks = new Map();
@@ -66,7 +54,7 @@ createServer(async (req, res) => {
     const url = new URL(req.url || "/", PUBLIC_BASE_URL);
 
     if (url.pathname === "/health") {
-      sendText(res, 200, "ok");
+      sendText(res, 200, getConfigErrors().length ? `booted with missing config: ${getConfigErrors().join(", ")}` : "ok");
       return;
     }
 
@@ -87,26 +75,41 @@ createServer(async (req, res) => {
   }
 }).listen(PORT, HOST, () => {
   console.log(`Server listening on ${HOST}:${PORT}`);
-  console.log(`Spotify redirect URI: ${SPOTIFY_REDIRECT_URI}`);
+  if (PUBLIC_BASE_URL) {
+    console.log(`Public base URL: ${PUBLIC_BASE_URL}`);
+    console.log(`Spotify redirect URI: ${SPOTIFY_REDIRECT_URI}`);
+  }
 });
 
-console.log("Bot polling started. Type your bot username inline in Telegram.");
+const configErrors = getConfigErrors();
+if (configErrors.length) {
+  console.error(`Bot is not polling because config is incomplete: ${configErrors.join(", ")}`);
+} else {
+  pollTelegram().catch((err) => {
+    console.error("Bot polling stopped:", err);
+    process.exitCode = 1;
+  });
+}
 
-while (true) {
-  try {
-    const updates = await telegram("getUpdates", {
-      offset: updateOffset,
-      timeout: 30,
-      allowed_updates: ["inline_query", "chosen_inline_result", "callback_query", "message"]
-    });
+async function pollTelegram() {
+  console.log("Bot polling started. Type your bot username inline in Telegram.");
 
-    for (const update of updates) {
-      updateOffset = update.update_id + 1;
-      handleUpdate(update).catch((err) => console.error("Update failed:", err));
+  while (true) {
+    try {
+      const updates = await telegram("getUpdates", {
+        offset: updateOffset,
+        timeout: 30,
+        allowed_updates: ["inline_query", "chosen_inline_result", "callback_query", "message"]
+      });
+
+      for (const update of updates) {
+        updateOffset = update.update_id + 1;
+        handleUpdate(update).catch((err) => console.error("Update failed:", err));
+      }
+    } catch (err) {
+      console.error("Polling failed:", err);
+      await sleep(1500);
     }
-  } catch (err) {
-    console.error("Polling failed:", err);
-    await sleep(1500);
   }
 }
 
@@ -481,6 +484,15 @@ function getPublicBaseUrl() {
   }
 
   return "";
+}
+
+function getConfigErrors() {
+  const errors = [];
+  if (!BOT_TOKEN) errors.push("BOT_TOKEN");
+  if (!PUBLIC_BASE_URL) errors.push("PUBLIC_BASE_URL or RAILWAY_PUBLIC_DOMAIN");
+  if (!SPOTIFY_CLIENT_ID) errors.push("SPOTIFY_CLIENT_ID");
+  if (!SPOTIFY_CLIENT_SECRET) errors.push("SPOTIFY_CLIENT_SECRET");
+  return errors;
 }
 
 function sleep(ms) {
