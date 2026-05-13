@@ -1,7 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
+import { execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 loadEnvFile();
 
@@ -26,29 +31,7 @@ const chosenTracks = new Map();
 const jobs = new Map();
 let updateOffset = 0;
 
-const testTunes = [
-  {
-    title: "SoundHelix Song 1",
-    performer: "T. Schürger / SoundHelix",
-    durationSeconds: 372,
-    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
-    credit: "SoundHelix Song 1 by T. Schürger, provided by SoundHelix."
-  },
-  {
-    title: "SoundHelix Song 2",
-    performer: "T. Schürger / SoundHelix",
-    durationSeconds: 345,
-    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
-    credit: "SoundHelix Song 2 by T. Schürger, provided by SoundHelix."
-  },
-  {
-    title: "SoundHelix Song 3",
-    performer: "T. Schürger / SoundHelix",
-    durationSeconds: 342,
-    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
-    credit: "SoundHelix Song 3 by T. Schürger, provided by SoundHelix."
-  }
-];
+
 
 createServer(async (req, res) => {
   try {
@@ -242,26 +225,32 @@ async function handleChosenInlineResult(chosen) {
   const jobKey = `${chosen.inline_message_id}:${chosen.result_id}`;
   if (jobs.has(jobKey)) return;
 
-  jobs.set(jobKey, prepareAndSwap(chosen.inline_message_id, track).finally(() => jobs.delete(jobKey)));
+  jobs.set(jobKey, prepareAndSwap(chosen.inline_message_id, track, chosen.from.id).finally(() => jobs.delete(jobKey)));
 }
 
-async function prepareAndSwap(inlineMessageId, spotifyTrack) {
+async function prepareAndSwap(inlineMessageId, spotifyTrack, fromUserId) {
+  let downloadDir = null;
   try {
-    await editText(inlineMessageId, `Loading test audio...\n${spotifyTrack.title}\n${spotifyTrack.artist} - ${spotifyTrack.album}`);
-    await sleep(1200);
+    await editText(inlineMessageId, `Downloading...\n${spotifyTrack.title}\n${spotifyTrack.artist} - ${spotifyTrack.album}`);
 
-    const tune = pickRandom(testTunes);
+    const { filePath, dir } = await downloadSpotifyTrack(spotifyTrack.spotifyUrl);
+    downloadDir = dir;
+
     const links = await resolveSongLinks(spotifyTrack);
+
+    // Inline messages only accept file_id or URL — upload to user's DM silently to get a file_id.
+    const sentMessage = await uploadAudioToTelegram(fromUserId, filePath, spotifyTrack);
+    const fileId = sentMessage.audio.file_id;
+    await telegram("deleteMessage", { chat_id: fromUserId, message_id: sentMessage.message_id });
 
     await telegram("editMessageMedia", {
       inline_message_id: inlineMessageId,
       media: {
         type: "audio",
-        media: tune.url,
-        title: tune.title,
-        performer: tune.performer,
-        duration: tune.durationSeconds,
-        caption: buildAudioCaption(spotifyTrack, tune, links),
+        media: fileId,
+        title: spotifyTrack.title,
+        performer: spotifyTrack.artist,
+        caption: buildAudioCaption(spotifyTrack, links),
         parse_mode: "HTML"
       },
       reply_markup: {
@@ -270,8 +259,51 @@ async function prepareAndSwap(inlineMessageId, spotifyTrack) {
     });
   } catch (err) {
     console.error("Audio swap failed:", err);
-    await editText(inlineMessageId, `Couldn't swap in the test audio.\n${spotifyTrack.title}\nTry another result.`);
+    await editText(inlineMessageId, `Couldn't get the audio.\n${spotifyTrack.title}\nTry another result.`);
+  } finally {
+    if (downloadDir) {
+      try { rmSync(downloadDir, { recursive: true, force: true }); } catch {}
+    }
   }
+}
+
+async function downloadSpotifyTrack(spotifyUrl) {
+  const dir = join(tmpdir(), `spotifydl-${randomBytes(8).toString("hex")}`);
+  mkdirSync(dir, { recursive: true });
+  try {
+    await execFileAsync("spotifydl", [spotifyUrl], {
+      cwd: dir,
+      timeout: 120_000,
+      env: {
+        ...process.env,
+        // spotify-dl picks these up for its own Spotify API calls
+        SPOTIFY_API_CLIENT_ID: SPOTIFY_CLIENT_ID,
+        SPOTIFY_API_CLIENT_SECRET: SPOTIFY_CLIENT_SECRET
+      }
+    });
+    const files = readdirSync(dir).filter(f => /\.(mp3|m4a|ogg|opus|flac)$/i.test(f));
+    if (files.length === 0) throw new Error("spotifydl produced no audio file");
+    return { filePath: join(dir, files[0]), dir };
+  } catch (err) {
+    try { rmSync(dir, { recursive: true, force: true }); } catch {}
+    throw err;
+  }
+}
+
+async function uploadAudioToTelegram(chatId, filePath, track) {
+  const fileBuffer = readFileSync(filePath);
+  const fileName = filePath.split("/").pop();
+
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("audio", new Blob([fileBuffer]), fileName);
+  form.append("title", track.title);
+  form.append("performer", track.artist);
+
+  const res = await fetch(`${apiBase}/sendAudio`, { method: "POST", body: form });
+  const data = await res.json();
+  if (!data.ok) throw new Error(`sendAudio failed: ${data.description}`);
+  return data.result;
 }
 
 async function resolveSongLinks(track) {
@@ -304,7 +336,7 @@ async function resolveSongLinks(track) {
   }
 }
 
-function buildAudioCaption(spotifyTrack, tune, links) {
+function buildAudioCaption(spotifyTrack, links) {
   const linkParts = [
     links.spotify ? makeHtmlLink("Spotify", links.spotify) : undefined,
     links.appleMusic ? makeHtmlLink("Apple Music", links.appleMusic) : undefined,
@@ -312,8 +344,7 @@ function buildAudioCaption(spotifyTrack, tune, links) {
   ].filter(Boolean);
 
   return [
-    `Spotify pick: ${escapeHtml(spotifyTrack.title)} - ${escapeHtml(spotifyTrack.artist)}`,
-    `Test audio: ${escapeHtml(tune.credit)}`,
+    `${escapeHtml(spotifyTrack.title)} - ${escapeHtml(spotifyTrack.artist)}`,
     linkParts.length ? `Listen: ${linkParts.join(" | ")}` : undefined
   ].filter(Boolean).join("\n");
 }
@@ -497,10 +528,6 @@ function withExpiry(token) {
     ...token,
     expires_at: Date.now() + token.expires_in * 1000
   };
-}
-
-function pickRandom(items) {
-  return items[Math.floor(Math.random() * items.length)];
 }
 
 function sendText(res, status, text) {
