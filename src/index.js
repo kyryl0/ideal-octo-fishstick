@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 loadEnvFile();
@@ -17,6 +18,7 @@ const AUDIO_PROVIDER = process.env.AUDIO_PROVIDER || "soundhelix";
 const LICENSED_SPOTIFY_MODULE = process.env.LICENSED_SPOTIFY_MODULE;
 const LICENSED_SPOTIFY_COOKIE = process.env.LICENSED_SPOTIFY_COOKIE || process.env.SP_DC_COOKIE;
 const LICENSED_TELEGRAM_MEDIA_TYPE = process.env.LICENSED_TELEGRAM_MEDIA_TYPE || "audio";
+const LICENSED_AUDIO_FORMAT = normalizeAudioFormat(process.env.LICENSED_AUDIO_FORMAT || "mp3");
 const SPOTIFY_SCOPE = "user-read-recently-played";
 const SPOTIFY_REDIRECT_URI = `${PUBLIC_BASE_URL}/spotify/callback`;
 const DATA_DIR = join(process.cwd(), "data");
@@ -325,20 +327,17 @@ async function downloadLicensedSpotifyAudio(spotifyTrack) {
     throw new Error("AUDIO_PROVIDER=licensed_spotify requires LICENSED_SPOTIFY_MODULE.");
   }
 
-  if (!LICENSED_SPOTIFY_COOKIE) {
-    throw new Error("AUDIO_PROVIDER=licensed_spotify requires LICENSED_SPOTIFY_COOKIE or SP_DC_COOKIE.");
-  }
-
   if (!spotifyTrack.spotifyUrl) {
     throw new Error("Spotify track URL is missing.");
   }
 
-  const fileName = `${safeSegment(spotifyTrack.spotifyId || createHash("sha256").update(spotifyTrack.spotifyUrl).digest("hex"))}.ogg`;
+  const fileName = `${safeSegment(spotifyTrack.spotifyId || createHash("sha256").update(spotifyTrack.spotifyUrl).digest("hex"))}.${LICENSED_AUDIO_FORMAT.extension}`;
   const filePath = join(AUDIO_DIR, fileName);
 
   if (!existsSync(filePath)) {
     const client = await getLicensedSpotifyClient();
-    const stream = client.download(spotifyTrack.spotifyUrl);
+    const download = await downloadFromLicensedProvider(client, spotifyTrack);
+    const stream = normalizeDownloadStream(download);
     await pipeline(stream, createWriteStream(filePath));
   }
 
@@ -351,19 +350,61 @@ async function downloadLicensedSpotifyAudio(spotifyTrack) {
   };
 }
 
+async function downloadFromLicensedProvider(client, spotifyTrack) {
+  const options = {
+    format: LICENSED_AUDIO_FORMAT.format,
+    output: LICENSED_AUDIO_FORMAT.format
+  };
+
+  if (client.download) {
+    return client.download(spotifyTrack.spotifyUrl, options);
+  }
+
+  if (client.getInfo && typeof client === "function") {
+    const info = await client.getInfo(spotifyTrack.spotifyUrl);
+    return client(info.url || spotifyTrack.spotifyUrl, options);
+  }
+
+  if (typeof client === "function") {
+    return client(spotifyTrack.spotifyUrl, options);
+  }
+
+  throw new Error(`Module ${LICENSED_SPOTIFY_MODULE} does not expose a supported download API.`);
+}
+
+function normalizeDownloadStream(download) {
+  if (download?.stream) return normalizeDownloadStream(download.stream);
+  if (download?.body) return normalizeDownloadStream(download.body);
+  if (download?.audio) return normalizeDownloadStream(download.audio);
+  if (download?.filePath) return createReadStream(download.filePath);
+  if (download?.path) return createReadStream(download.path);
+  if (typeof download === "string") return createReadStream(download);
+  if (Buffer.isBuffer(download) || download instanceof Uint8Array) return Readable.from([download]);
+  if (download?.getReader) return Readable.fromWeb(download);
+  if (download?.pipe || download?.[Symbol.asyncIterator]) return download;
+
+  throw new Error("Licensed Spotify downloader did not return a stream, buffer, or file path.");
+}
+
 async function getLicensedSpotifyClient() {
   if (licensedSpotifyClient) return licensedSpotifyClient;
 
   const provider = await import(LICENSED_SPOTIFY_MODULE);
-  const Spotify = provider.Spotify || provider.default?.Spotify || provider.default;
+  const moduleApi = provider.default || provider;
+  const Spotify = provider.Spotify || provider.default?.Spotify;
 
-  if (!Spotify?.create) {
-    throw new Error(`Module ${LICENSED_SPOTIFY_MODULE} does not export Spotify.create().`);
+  if (Spotify?.create) {
+    licensedSpotifyClient = await Spotify.create(
+      LICENSED_SPOTIFY_COOKIE ? { cookie: normalizeSpotifyCookie(LICENSED_SPOTIFY_COOKIE) } : {}
+    );
+    return licensedSpotifyClient;
   }
 
-  licensedSpotifyClient = await Spotify.create({
-    cookie: normalizeSpotifyCookie(LICENSED_SPOTIFY_COOKIE)
-  });
+  if (typeof moduleApi !== "function" && !moduleApi?.download) {
+    throw new Error(`Module ${LICENSED_SPOTIFY_MODULE} does not export Spotify.create(), download(), or a callable downloader.`);
+  }
+
+  licensedSpotifyClient = moduleApi;
   return licensedSpotifyClient;
 }
 
@@ -645,6 +686,15 @@ function safeSegment(value) {
   return String(value).replace(/[^a-z0-9_-]+/gi, "_").slice(0, 80);
 }
 
+function normalizeAudioFormat(value) {
+  const format = String(value || "mp3").toLowerCase().replace(/^\./, "");
+  if (format === "mpeg" || format === "mp3") return { format: "mp3", extension: "mp3" };
+  if (format === "m4a" || format === "mp4" || format === "aac") return { format: "m4a", extension: "m4a" };
+  if (format === "ogg" || format === "oga" || format === "vorbis") return { format: "ogg", extension: "ogg" };
+  if (format === "opus") return { format: "opus", extension: "opus" };
+  throw new Error(`Unsupported LICENSED_AUDIO_FORMAT: ${value}`);
+}
+
 function guessMediaType(fileName) {
   if (fileName.endsWith(".ogg")) return "audio/ogg";
   if (fileName.endsWith(".opus")) return "audio/ogg";
@@ -672,7 +722,6 @@ function getConfigErrors() {
   if (!SPOTIFY_CLIENT_ID) errors.push("SPOTIFY_CLIENT_ID");
   if (!SPOTIFY_CLIENT_SECRET) errors.push("SPOTIFY_CLIENT_SECRET");
   if (AUDIO_PROVIDER === "licensed_spotify" && !LICENSED_SPOTIFY_MODULE) errors.push("LICENSED_SPOTIFY_MODULE");
-  if (AUDIO_PROVIDER === "licensed_spotify" && !LICENSED_SPOTIFY_COOKIE) errors.push("LICENSED_SPOTIFY_COOKIE or SP_DC_COOKIE");
   return errors;
 }
 
