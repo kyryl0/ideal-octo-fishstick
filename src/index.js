@@ -15,7 +15,7 @@ const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const SONGLINK_API_KEY = process.env.SONGLINK_API_KEY;
 const AUDIO_PROVIDER = process.env.AUDIO_PROVIDER || "soundhelix";
-const LICENSED_SPOTIFY_MODULE = process.env.LICENSED_SPOTIFY_MODULE;
+const LICENSED_SPOTIFY_MODULE = process.env.LICENSED_SPOTIFY_MODULE || (AUDIO_PROVIDER === "licensed_spotify" ? "spdl" : undefined);
 const LICENSED_SPOTIFY_COOKIE = process.env.LICENSED_SPOTIFY_COOKIE || process.env.SP_DC_COOKIE;
 const LICENSED_TELEGRAM_MEDIA_TYPE = process.env.LICENSED_TELEGRAM_MEDIA_TYPE || "audio";
 const LICENSED_AUDIO_FORMAT = normalizeAudioFormat(process.env.LICENSED_AUDIO_FORMAT || "mp3");
@@ -716,10 +716,12 @@ function safeSegment(value) {
 
 function normalizeAudioFormat(value) {
   const format = String(value || "mp3").toLowerCase().replace(/^\./, "");
-  if (format === "mpeg" || format === "mp3") return { format: "mp3", extension: "mp3" };
-  if (format === "m4a" || format === "mp4" || format === "aac") return { format: "m4a", extension: "m4a" };
-  if (format === "ogg" || format === "oga" || format === "vorbis") return { format: "ogg", extension: "ogg" };
-  if (format === "opus") return { format: "opus", extension: "opus" };
+  if (format === "mpeg" || format === "mp3" || format === "mp3_96") return { format: "MP3_96", extension: "mp3" };
+  if (format === "m4a" || format === "mp4" || format === "aac" || format === "mp4_128") return { format: "MP4_128", extension: "m4a" };
+  if (format === "mp4_256") return { format: "MP4_256", extension: "m4a" };
+  if (format === "ogg" || format === "oga" || format === "vorbis" || format === "ogg_vorbis_160") return { format: "OGG_VORBIS_160", extension: "ogg" };
+  if (format === "ogg_vorbis_96") return { format: "OGG_VORBIS_96", extension: "ogg" };
+  if (format === "ogg_vorbis_320") return { format: "OGG_VORBIS_320", extension: "ogg" };
   throw new Error(`Unsupported LICENSED_AUDIO_FORMAT: ${value}`);
 }
 
