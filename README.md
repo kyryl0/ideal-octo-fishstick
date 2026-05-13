@@ -29,10 +29,9 @@ Railway already gives you the public HTTPS endpoint, so you do not need a separa
 BOT_TOKEN=123456:replace-me
 SPOTIFY_CLIENT_ID=replace-me
 SPOTIFY_CLIENT_SECRET=replace-me
-APP_PORT=3000
 ```
 
-Do not set `PORT`; Railway provides it internally. `APP_PORT=3000` makes the app listen on the same port you selected for the Railway service domain. You also usually do not need `PUBLIC_BASE_URL`; the app automatically uses `https://$RAILWAY_PUBLIC_DOMAIN`.
+Do not set `PORT` or `APP_PORT`; Railway provides `PORT` and the app reads it automatically. You also usually do not need `PUBLIC_BASE_URL`; the app automatically uses `https://$RAILWAY_PUBLIC_DOMAIN`.
 
 4. Deploy/redeploy the service.
 5. Open `https://your-service.up.railway.app/health`. It should return `ok`.
@@ -44,7 +43,7 @@ https://your-service.up.railway.app/spotify/callback
 
 7. In Telegram, open your bot and send `/start`.
 
-If Railway asks which port the app listens on, enter `3000`. Keep `APP_PORT=3000` in Railway variables so the app and domain target port match.
+If Railway asks which port the service domain should target, use the port Railway detects for the running service. Do not override the `PORT` variable manually.
 
 If the Railway page says "Application failed to respond", open `/health` after redeploying. It will either return `ok` or list the missing variables. Also check that you generated a public domain before relying on the automatic `RAILWAY_PUBLIC_DOMAIN` URL.
 
