@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
+import { pipeline } from "node:stream/promises";
 
 loadEnvFile();
 
@@ -12,18 +13,25 @@ const HOST = process.env.HOST || "0.0.0.0";
 const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const SONGLINK_API_KEY = process.env.SONGLINK_API_KEY;
+const AUDIO_PROVIDER = process.env.AUDIO_PROVIDER || "soundhelix";
+const LICENSED_SPOTIFY_MODULE = process.env.LICENSED_SPOTIFY_MODULE;
+const LICENSED_SPOTIFY_COOKIE = process.env.LICENSED_SPOTIFY_COOKIE || process.env.SP_DC_COOKIE;
+const LICENSED_TELEGRAM_MEDIA_TYPE = process.env.LICENSED_TELEGRAM_MEDIA_TYPE || "audio";
 const SPOTIFY_SCOPE = "user-read-recently-played";
 const SPOTIFY_REDIRECT_URI = `${PUBLIC_BASE_URL}/spotify/callback`;
 const DATA_DIR = join(process.cwd(), "data");
+const AUDIO_DIR = join(DATA_DIR, "audio");
 const TOKEN_PATH = join(DATA_DIR, "spotify-tokens.json");
 
 mkdirSync(DATA_DIR, { recursive: true });
+mkdirSync(AUDIO_DIR, { recursive: true });
 
 const apiBase = BOT_TOKEN ? `https://api.telegram.org/bot${BOT_TOKEN}` : "";
 const spotifyTokens = loadJson(TOKEN_PATH, {});
 const loginStates = new Map();
 const chosenTracks = new Map();
 const jobs = new Map();
+let licensedSpotifyClient;
 let updateOffset = 0;
 
 const testTunes = [
@@ -66,6 +74,11 @@ createServer(async (req, res) => {
 
     if (url.pathname === "/spotify/callback") {
       await handleSpotifyCallback(url, res);
+      return;
+    }
+
+    if (url.pathname.startsWith("/files/")) {
+      serveAudioFile(url, res);
       return;
     }
 
@@ -128,7 +141,7 @@ async function handleUpdate(update) {
   if (update.callback_query) {
     await telegram("answerCallbackQuery", {
       callback_query_id: update.callback_query.id,
-      text: "Still preparing the test audio..."
+      text: "Still preparing the audio..."
     });
     return;
   }
@@ -170,9 +183,7 @@ async function handleInlineQuery(query) {
         id: "no-recent-tracks",
         title: "No recent Spotify tracks",
         description: "Play something on Spotify, then try again.",
-        input_message_content: {
-          message_text: "No recent Spotify tracks found."
-        }
+        input_message_content: { message_text: "No recent Spotify tracks found." }
       }],
       cache_time: 1,
       is_personal: true
@@ -191,10 +202,10 @@ async function handleInlineQuery(query) {
       description: `${track.artist} - ${track.album}`,
       thumbnail_url: track.artwork,
       input_message_content: {
-        message_text: `Preparing test audio for:\n${track.title}\n${track.artist} - ${track.album}`
+        message_text: `Preparing audio for:\n${track.title}\n${track.artist} - ${track.album}`
       },
       reply_markup: {
-        inline_keyboard: [[{ text: "Loading test audio...", callback_data: "loading" }]]
+        inline_keyboard: [[{ text: "Loading audio...", callback_data: "loading" }]]
       }
     };
   });
@@ -215,9 +226,7 @@ async function answerWithConnectResult(inlineQueryId, telegramUserId, title = "C
       id: "connect-spotify",
       title,
       description: "Authorize Spotify to show recently listened songs.",
-      input_message_content: {
-        message_text: "Connect Spotify first, then try inline mode again."
-      },
+      input_message_content: { message_text: "Connect Spotify first, then try inline mode again." },
       reply_markup: {
         inline_keyboard: [[{ text: "Connect Spotify", url: makeLoginUrl(telegramUserId) }]]
       }
@@ -247,31 +256,134 @@ async function handleChosenInlineResult(chosen) {
 
 async function prepareAndSwap(inlineMessageId, spotifyTrack) {
   try {
-    await editText(inlineMessageId, `Loading test audio...\n${spotifyTrack.title}\n${spotifyTrack.artist} - ${spotifyTrack.album}`);
+    await editText(inlineMessageId, `Loading audio...\n${spotifyTrack.title}\n${spotifyTrack.artist} - ${spotifyTrack.album}`);
     await sleep(1200);
 
-    const tune = pickRandom(testTunes);
+    const audio = await resolveAudio(spotifyTrack);
     const links = await resolveSongLinks(spotifyTrack);
+    await editInlineMedia(inlineMessageId, audio, spotifyTrack, links);
+  } catch (err) {
+    console.error("Audio swap failed:", err);
+    await editText(inlineMessageId, `Couldn't swap in the audio.\n${spotifyTrack.title}\nTry another result.`);
+  }
+}
 
+async function editInlineMedia(inlineMessageId, audio, spotifyTrack, links) {
+  const media = {
+    type: LICENSED_TELEGRAM_MEDIA_TYPE,
+    media: audio.url,
+    title: audio.title,
+    performer: audio.performer,
+    duration: audio.durationSeconds,
+    caption: buildAudioCaption(spotifyTrack, audio, links),
+    parse_mode: "HTML"
+  };
+
+  try {
+    await telegram("editMessageMedia", {
+      inline_message_id: inlineMessageId,
+      media,
+      reply_markup: {
+        inline_keyboard: [[{ text: "Show recent Spotify songs", switch_inline_query_current_chat: "" }]]
+      }
+    });
+  } catch (err) {
+    if (media.type !== "audio") throw err;
+    console.error("Audio edit failed; retrying as document:", err);
     await telegram("editMessageMedia", {
       inline_message_id: inlineMessageId,
       media: {
-        type: "audio",
-        media: tune.url,
-        title: tune.title,
-        performer: tune.performer,
-        duration: tune.durationSeconds,
-        caption: buildAudioCaption(spotifyTrack, tune, links),
+        type: "document",
+        media: audio.url,
+        caption: buildAudioCaption(spotifyTrack, audio, links),
         parse_mode: "HTML"
       },
       reply_markup: {
         inline_keyboard: [[{ text: "Show recent Spotify songs", switch_inline_query_current_chat: "" }]]
       }
     });
-  } catch (err) {
-    console.error("Audio swap failed:", err);
-    await editText(inlineMessageId, `Couldn't swap in the test audio.\n${spotifyTrack.title}\nTry another result.`);
   }
+}
+
+async function resolveAudio(spotifyTrack) {
+  if (AUDIO_PROVIDER === "licensed_spotify") {
+    return downloadLicensedSpotifyAudio(spotifyTrack);
+  }
+
+  const tune = pickRandom(testTunes);
+  return {
+    title: tune.title,
+    performer: tune.performer,
+    durationSeconds: tune.durationSeconds,
+    url: tune.url,
+    credit: tune.credit
+  };
+}
+
+async function downloadLicensedSpotifyAudio(spotifyTrack) {
+  if (!LICENSED_SPOTIFY_MODULE) {
+    throw new Error("AUDIO_PROVIDER=licensed_spotify requires LICENSED_SPOTIFY_MODULE.");
+  }
+
+  if (!LICENSED_SPOTIFY_COOKIE) {
+    throw new Error("AUDIO_PROVIDER=licensed_spotify requires LICENSED_SPOTIFY_COOKIE or SP_DC_COOKIE.");
+  }
+
+  if (!spotifyTrack.spotifyUrl) {
+    throw new Error("Spotify track URL is missing.");
+  }
+
+  const fileName = `${safeSegment(spotifyTrack.spotifyId || createHash("sha256").update(spotifyTrack.spotifyUrl).digest("hex"))}.ogg`;
+  const filePath = join(AUDIO_DIR, fileName);
+
+  if (!existsSync(filePath)) {
+    const client = await getLicensedSpotifyClient();
+    const stream = client.download(spotifyTrack.spotifyUrl);
+    await pipeline(stream, createWriteStream(filePath));
+  }
+
+  return {
+    title: spotifyTrack.title,
+    performer: spotifyTrack.artist,
+    durationSeconds: undefined,
+    url: `${PUBLIC_BASE_URL}/files/${encodeURIComponent(fileName)}`,
+    credit: "Licensed Spotify audio."
+  };
+}
+
+async function getLicensedSpotifyClient() {
+  if (licensedSpotifyClient) return licensedSpotifyClient;
+
+  const provider = await import(LICENSED_SPOTIFY_MODULE);
+  const Spotify = provider.Spotify || provider.default?.Spotify || provider.default;
+
+  if (!Spotify?.create) {
+    throw new Error(`Module ${LICENSED_SPOTIFY_MODULE} does not export Spotify.create().`);
+  }
+
+  licensedSpotifyClient = await Spotify.create({
+    cookie: normalizeSpotifyCookie(LICENSED_SPOTIFY_COOKIE)
+  });
+  return licensedSpotifyClient;
+}
+
+function serveAudioFile(url, res) {
+  const fileName = basename(decodeURIComponent(url.pathname.slice("/files/".length)));
+  const filePath = join(AUDIO_DIR, fileName);
+
+  if (!existsSync(filePath)) {
+    sendText(res, 404, "not found");
+    return;
+  }
+
+  const { size } = statSync(filePath);
+  res.writeHead(200, {
+    "content-type": guessMediaType(fileName),
+    "content-length": String(size),
+    "accept-ranges": "bytes",
+    "cache-control": "public, max-age=86400"
+  });
+  createReadStream(filePath).pipe(res);
 }
 
 async function resolveSongLinks(track) {
@@ -304,7 +416,7 @@ async function resolveSongLinks(track) {
   }
 }
 
-function buildAudioCaption(spotifyTrack, tune, links) {
+function buildAudioCaption(spotifyTrack, audio, links) {
   const linkParts = [
     links.spotify ? makeHtmlLink("Spotify", links.spotify) : undefined,
     links.appleMusic ? makeHtmlLink("Apple Music", links.appleMusic) : undefined,
@@ -313,7 +425,7 @@ function buildAudioCaption(spotifyTrack, tune, links) {
 
   return [
     `Spotify pick: ${escapeHtml(spotifyTrack.title)} - ${escapeHtml(spotifyTrack.artist)}`,
-    `Test audio: ${escapeHtml(tune.credit)}`,
+    audio.credit ? `Audio: ${escapeHtml(audio.credit)}` : undefined,
     linkParts.length ? `Listen: ${linkParts.join(" | ")}` : undefined
   ].filter(Boolean).join("\n");
 }
@@ -525,6 +637,22 @@ function trimTrailingSlash(value) {
   return value.replace(/\/+$/, "");
 }
 
+function normalizeSpotifyCookie(value) {
+  return value.startsWith("sp_dc=") ? value : `sp_dc=${value}`;
+}
+
+function safeSegment(value) {
+  return String(value).replace(/[^a-z0-9_-]+/gi, "_").slice(0, 80);
+}
+
+function guessMediaType(fileName) {
+  if (fileName.endsWith(".ogg")) return "audio/ogg";
+  if (fileName.endsWith(".opus")) return "audio/ogg";
+  if (fileName.endsWith(".mp3")) return "audio/mpeg";
+  if (fileName.endsWith(".m4a")) return "audio/mp4";
+  return "application/octet-stream";
+}
+
 function getPublicBaseUrl() {
   if (process.env.PUBLIC_BASE_URL) {
     return trimTrailingSlash(process.env.PUBLIC_BASE_URL);
@@ -543,6 +671,8 @@ function getConfigErrors() {
   if (!PUBLIC_BASE_URL) errors.push("PUBLIC_BASE_URL or RAILWAY_PUBLIC_DOMAIN");
   if (!SPOTIFY_CLIENT_ID) errors.push("SPOTIFY_CLIENT_ID");
   if (!SPOTIFY_CLIENT_SECRET) errors.push("SPOTIFY_CLIENT_SECRET");
+  if (AUDIO_PROVIDER === "licensed_spotify" && !LICENSED_SPOTIFY_MODULE) errors.push("LICENSED_SPOTIFY_MODULE");
+  if (AUDIO_PROVIDER === "licensed_spotify" && !LICENSED_SPOTIFY_COOKIE) errors.push("LICENSED_SPOTIFY_COOKIE or SP_DC_COOKIE");
   return errors;
 }
 
