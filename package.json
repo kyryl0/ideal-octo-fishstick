@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/install-licensed-provider.js",
     "start": "node src/index.js"
   },
   "engines": {
