@@ -7,15 +7,13 @@ This is a working inline-mode Telegram bot skeleton for the flow:
 3. Bot returns recently listened Spotify tracks with name + album art.
 4. User taps a result.
 5. Telegram sends a small placeholder message immediately.
-6. Bot edits that inline message into an audio message using a free licensed test MP3.
+6. Bot edits that inline message into an audio message.
 
-This intentionally does **not** download or send Spotify audio. It only uses Spotify metadata to test whether the placeholder-to-audio inline edit logic works.
+By default, the final audio is a SoundHelix test MP3. With `AUDIO_PROVIDER=licensed_spotify`, it downloads the selected Spotify track using the licensed provider package configured in Railway.
 
 ## Why this shape
 
 Telegram does **not** support uploading a new local file when editing an inline message. The edited media must be a public HTTP URL or an existing Telegram `file_id`. So the placeholder should be a fast text/photo message, not a fake never-ending audio upload.
-
-For this test, the final audio is a SoundHelix MP3 example. SoundHelix says its examples can be used if credited.
 
 ## Deploy on Railway
 
@@ -45,7 +43,22 @@ https://your-service.up.railway.app/spotify/callback
 
 If Railway asks which port the service domain should target, use the port Railway detects for the running service. Do not override the `PORT` variable manually.
 
-If the Railway page says "Application failed to respond", open `/health` after redeploying. It will either return `ok` or list the missing variables. Also check that you generated a public domain before relying on the automatic `RAILWAY_PUBLIC_DOMAIN` URL.
+## Licensed Audio Backend
+
+Keep these unset to use the SoundHelix fallback. To use the licensed Spotify downloader, add these Railway variables:
+
+```text
+AUDIO_PROVIDER=licensed_spotify
+LICENSED_SPOTIFY_MODULE=your-nda-import-specifier
+LICENSED_SPOTIFY_INSTALL_SPEC=your-nda-npm-or-git-install-specifier
+LICENSED_SPOTIFY_COOKIE=sp_dc=your-cookie-here
+```
+
+`LICENSED_SPOTIFY_MODULE` is the string used by dynamic `import(...)`, replacing the NDA import path in code. `LICENSED_SPOTIFY_INSTALL_SPEC` is what Railway installs during `npm install`; it can be the same value, or a private npm/git install spec if that differs.
+
+The provider is expected to export `Spotify.create({ cookie })`, and `client.download(spotifyTrackUrl)` must return a readable stream. The bot saves the stream as an `.ogg` file under `data/audio`, exposes it at `/files/...`, and passes that public URL to Telegram for the inline message edit.
+
+The example downloader returns Ogg Vorbis. Telegram may reject OGG as `InputMediaAudio`; if that happens, the bot automatically retries the edit as a document. If your provider can output MP3 or M4A later, that is better for Telegram's audio player.
 
 ## Spotify setup
 
@@ -81,5 +94,5 @@ Open a private chat with the bot and send `/start`, then use the Spotify login l
 
 - Spotify recently played may return up to 50 items and does not include podcasts.
 - This stores Spotify tokens locally in `data/spotify-tokens.json`; use a real database and encryption for production.
-- Railway's filesystem is ephemeral across deploys/restarts. For a quick proof of concept this is fine, but for continued use attach a database or volume for Spotify tokens.
+- Railway's filesystem is ephemeral across deploys/restarts. For continued use, attach a database or volume for Spotify tokens and downloaded audio.
 - After Telegram has cached a track once, a production bot should prefer reusing a Telegram `file_id`.
