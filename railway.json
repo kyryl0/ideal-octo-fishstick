@@ -1,7 +1,8 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "builder": "RAILPACK"
+    "builder": "RAILPACK",
+    "buildCommand": "npm install && npm install -g https://github.com/swapnilsoni1999/spotify-dl"
   },
   "deploy": {
     "startCommand": "npm start",
