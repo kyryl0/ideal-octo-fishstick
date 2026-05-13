@@ -1,24 +1,50 @@
 import { spawnSync } from "node:child_process";
-
-const installSpec = process.env.LICENSED_SPOTIFY_INSTALL_SPEC || process.env.LICENSED_SPOTIFY_MODULE;
-
-if (!installSpec) {
-  console.log("No LICENSED_SPOTIFY_INSTALL_SPEC set; skipping licensed provider install.");
-  process.exit(0);
-}
-
-console.log(`Installing licensed Spotify provider: ${installSpec}`);
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-const result = spawnSync(npmCommand, ["install", "--no-save", installSpec], {
-  stdio: "inherit",
-  env: {
-    ...process.env,
+const installSpec = process.env.LICENSED_SPOTIFY_INSTALL_SPEC;
+
+if (installSpec) {
+  console.log(`Installing licensed Spotify provider override: ${installSpec}`);
+  runNpm(["install", "--no-save", installSpec], {
     LICENSED_SPOTIFY_INSTALL_SPEC: "",
     LICENSED_SPOTIFY_MODULE: process.env.LICENSED_SPOTIFY_MODULE || ""
-  }
-});
+  });
+}
 
-if (result.status !== 0) {
-  process.exit(result.status ?? 1);
+ensureNodeSpdlBuilt();
+
+function ensureNodeSpdlBuilt() {
+  const spdlDir = join(process.cwd(), "node_modules", "spdl");
+  const distEntry = join(spdlDir, "dist", "esm", "index.js");
+
+  if (!existsSync(join(spdlDir, "package.json"))) {
+    console.log("node-spdl is not installed; skipping node-spdl build.");
+    return;
+  }
+
+  if (existsSync(distEntry)) {
+    console.log("node-spdl dist is already present.");
+    return;
+  }
+
+  console.log("Building node-spdl from GitHub source.");
+  runNpm(["install", "--include=dev"], {}, spdlDir);
+  runNpm(["run", "build"], {}, spdlDir);
+}
+
+function runNpm(args, env = {}, cwd = process.cwd()) {
+  const result = spawnSync(npmCommand, args, {
+    cwd,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      ...env
+    }
+  });
+
+  if (result.status !== 0) {
+    process.exit(result.status ?? 1);
+  }
 }
