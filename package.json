@@ -7,6 +7,9 @@
     "postinstall": "node scripts/install-licensed-provider.js",
     "start": "node src/index.js"
   },
+  "dependencies": {
+    "spdl": "github:PwLDev/node-spdl"
+  },
   "engines": {
     "node": ">=20"
   }
