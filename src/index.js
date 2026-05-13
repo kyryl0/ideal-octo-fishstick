@@ -51,7 +51,7 @@ const testTunes = [
 
 createServer(async (req, res) => {
   try {
-    const url = new URL(req.url || "/", PUBLIC_BASE_URL);
+    const url = new URL(req.url || "/", PUBLIC_BASE_URL || "http://localhost");
 
     if (url.pathname === "/health") {
       sendText(res, 200, getConfigErrors().length ? `booted with missing config: ${getConfigErrors().join(", ")}` : "ok");
