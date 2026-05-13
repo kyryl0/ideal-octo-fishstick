@@ -19,6 +19,7 @@ const LICENSED_SPOTIFY_MODULE = process.env.LICENSED_SPOTIFY_MODULE || (AUDIO_PR
 const LICENSED_SPOTIFY_COOKIE = process.env.LICENSED_SPOTIFY_COOKIE || process.env.SP_DC_COOKIE;
 const LICENSED_TELEGRAM_MEDIA_TYPE = process.env.LICENSED_TELEGRAM_MEDIA_TYPE || "audio";
 const LICENSED_AUDIO_FORMAT = normalizeAudioFormat(process.env.LICENSED_AUDIO_FORMAT || "mp3");
+const LICENSED_AUDIO_FORMATS = getAudioFormatCandidates(LICENSED_AUDIO_FORMAT);
 const SPOTIFY_SCOPE = "user-read-recently-played";
 const SPOTIFY_REDIRECT_URI = `${PUBLIC_BASE_URL}/spotify/callback`;
 const DATA_DIR = join(process.cwd(), "data");
@@ -266,7 +267,7 @@ async function prepareAndSwap(inlineMessageId, spotifyTrack) {
     await editInlineMedia(inlineMessageId, audio, spotifyTrack, links);
   } catch (err) {
     console.error("Audio swap failed:", err);
-    await editText(inlineMessageId, `Couldn't swap in the audio.\n${spotifyTrack.title}\nTry another result.`);
+    await editText(inlineMessageId, `Couldn't swap in the audio.\n${spotifyTrack.title}\n${formatUserError(err)}`);
   }
 }
 
@@ -331,29 +332,41 @@ async function downloadLicensedSpotifyAudio(spotifyTrack) {
     throw new Error("Spotify track URL is missing.");
   }
 
-  const fileName = `${safeSegment(spotifyTrack.spotifyId || createHash("sha256").update(spotifyTrack.spotifyUrl).digest("hex"))}.${LICENSED_AUDIO_FORMAT.extension}`;
-  const filePath = join(AUDIO_DIR, fileName);
+  const fileBase = safeSegment(spotifyTrack.spotifyId || createHash("sha256").update(spotifyTrack.spotifyUrl).digest("hex"));
+  const client = await getLicensedSpotifyClient();
+  const errors = [];
 
-  if (!existsSync(filePath)) {
-    const client = await getLicensedSpotifyClient();
-    const download = await downloadFromLicensedProvider(client, spotifyTrack);
-    const stream = normalizeDownloadStream(download);
-    await pipeline(stream, createWriteStream(filePath));
+  for (const audioFormat of LICENSED_AUDIO_FORMATS) {
+    const fileName = `${fileBase}.${audioFormat.extension}`;
+    const filePath = join(AUDIO_DIR, fileName);
+
+    try {
+      if (!existsSync(filePath)) {
+        const download = await downloadFromLicensedProvider(client, spotifyTrack, audioFormat);
+        const stream = normalizeDownloadStream(download);
+        await pipeline(stream, createWriteStream(filePath));
+      }
+
+      return {
+        title: spotifyTrack.title,
+        performer: spotifyTrack.artist,
+        durationSeconds: undefined,
+        url: `${PUBLIC_BASE_URL}/files/${encodeURIComponent(fileName)}`,
+        credit: `Licensed Spotify audio (${audioFormat.format}).`
+      };
+    } catch (err) {
+      errors.push(`${audioFormat.format}: ${err.message}`);
+      console.error(`Licensed download failed for ${audioFormat.format}:`, err);
+    }
   }
 
-  return {
-    title: spotifyTrack.title,
-    performer: spotifyTrack.artist,
-    durationSeconds: undefined,
-    url: `${PUBLIC_BASE_URL}/files/${encodeURIComponent(fileName)}`,
-    credit: "Licensed Spotify audio."
-  };
+  throw new Error(`All licensed audio formats failed. ${errors.join(" | ")}`);
 }
 
-async function downloadFromLicensedProvider(client, spotifyTrack) {
+async function downloadFromLicensedProvider(client, spotifyTrack, audioFormat = LICENSED_AUDIO_FORMAT) {
   const options = {
-    format: LICENSED_AUDIO_FORMAT.format,
-    output: LICENSED_AUDIO_FORMAT.format
+    format: audioFormat.format,
+    output: audioFormat.format
   };
 
   if (client.download) {
@@ -702,6 +715,11 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
+function formatUserError(err) {
+  const message = err?.message ? String(err.message) : "Try another result.";
+  return message.length > 180 ? `${message.slice(0, 177)}...` : message;
+}
+
 function trimTrailingSlash(value) {
   return value.replace(/\/+$/, "");
 }
@@ -723,6 +741,21 @@ function normalizeAudioFormat(value) {
   if (format === "ogg_vorbis_96") return { format: "OGG_VORBIS_96", extension: "ogg" };
   if (format === "ogg_vorbis_320") return { format: "OGG_VORBIS_320", extension: "ogg" };
   throw new Error(`Unsupported LICENSED_AUDIO_FORMAT: ${value}`);
+}
+
+function getAudioFormatCandidates(preferred) {
+  const fallbackFormats = [
+    preferred,
+    { format: "OGG_VORBIS_160", extension: "ogg" },
+    { format: "MP4_128", extension: "m4a" },
+    { format: "OGG_VORBIS_96", extension: "ogg" }
+  ];
+  const seen = new Set();
+  return fallbackFormats.filter((item) => {
+    if (seen.has(item.format)) return false;
+    seen.add(item.format);
+    return true;
+  });
 }
 
 function guessMediaType(fileName) {
