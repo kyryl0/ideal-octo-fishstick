@@ -361,15 +361,39 @@ async function downloadFromLicensedProvider(client, spotifyTrack) {
   }
 
   if (client.getInfo && typeof client === "function") {
-    const info = await client.getInfo(spotifyTrack.spotifyUrl);
-    return client(info.url || spotifyTrack.spotifyUrl, options);
+    try {
+      const info = await client.getInfo(spotifyTrack.spotifyUrl);
+      return client(info.url || spotifyTrack.spotifyUrl, options);
+    } catch (err) {
+      console.error("Licensed provider getInfo failed; falling back to metadata search:", err);
+      return downloadFromMetadataSearch(spotifyTrack, options);
+    }
   }
 
   if (typeof client === "function") {
-    return client(spotifyTrack.spotifyUrl, options);
+    try {
+      return await client(spotifyTrack.spotifyUrl, options);
+    } catch (err) {
+      console.error("Licensed provider direct download failed; falling back to metadata search:", err);
+      return downloadFromMetadataSearch(spotifyTrack, options);
+    }
   }
 
   throw new Error(`Module ${LICENSED_SPOTIFY_MODULE} does not expose a supported download API.`);
+}
+
+async function downloadFromMetadataSearch(spotifyTrack, options) {
+  const Youtube = getModuleDefault(await import("youtube-sr"));
+  const ytdl = getModuleDefault(await import("discord-ytdl-core"));
+  const query = `${spotifyTrack.title} ${spotifyTrack.artist}`;
+
+  let video = await Youtube.searchOne(query);
+  if (!video) video = await Youtube.searchOne(spotifyTrack.title);
+  if (!video?.url || video.views === 0) {
+    throw new Error(`No downloadable audio result found for ${query}.`);
+  }
+
+  return ytdl(video.url, options);
 }
 
 function normalizeDownloadStream(download) {
@@ -384,6 +408,10 @@ function normalizeDownloadStream(download) {
   if (download?.pipe || download?.[Symbol.asyncIterator]) return download;
 
   throw new Error("Licensed Spotify downloader did not return a stream, buffer, or file path.");
+}
+
+function getModuleDefault(module) {
+  return module.default?.default || module.default || module;
 }
 
 async function getLicensedSpotifyClient() {
