@@ -18,6 +18,7 @@ ensureNodeSpdlBuilt();
 function ensureNodeSpdlBuilt() {
   const spdlDir = join(process.cwd(), "node_modules", "spdl");
   const distEntry = join(spdlDir, "dist", "esm", "index.js");
+  const sourceEntry = join(spdlDir, "src", "index.ts");
 
   if (!existsSync(join(spdlDir, "package.json"))) {
     console.log("node-spdl is not installed; skipping node-spdl build.");
@@ -27,6 +28,11 @@ function ensureNodeSpdlBuilt() {
   if (existsSync(distEntry)) {
     console.log("node-spdl dist is already present.");
     return;
+  }
+
+  if (!existsSync(sourceEntry)) {
+    console.error("node-spdl was installed without dist or src files. Use the GitHub source tarball dependency in package.json.");
+    process.exit(1);
   }
 
   console.log("Building node-spdl from GitHub source.");
