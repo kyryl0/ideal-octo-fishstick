@@ -13,6 +13,7 @@ const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const SPOTIFY_SCOPE = "user-read-recently-played";
 const SPOTIFY_REDIRECT_URI = `${PUBLIC_BASE_URL}/spotify/callback`;
+const SONGLINK_API_KEY = process.env.SONGLINK_API_KEY;
 const DATA_DIR = join(process.cwd(), "data");
 const TOKEN_PATH = join(DATA_DIR, "spotify-tokens.json");
 
@@ -250,6 +251,7 @@ async function prepareAndSwap(inlineMessageId, spotifyTrack) {
     await sleep(1200);
 
     const tune = pickRandom(testTunes);
+    const links = await resolveSongLinks(spotifyTrack);
 
     await telegram("editMessageMedia", {
       inline_message_id: inlineMessageId,
@@ -259,7 +261,8 @@ async function prepareAndSwap(inlineMessageId, spotifyTrack) {
         title: tune.title,
         performer: tune.performer,
         duration: tune.durationSeconds,
-        caption: `Spotify pick: ${spotifyTrack.title} - ${spotifyTrack.artist}\nTest audio: ${tune.credit}`
+        caption: buildAudioCaption(spotifyTrack, tune, links),
+        parse_mode: "HTML"
       },
       reply_markup: {
         inline_keyboard: [[{ text: "Show recent Spotify songs", switch_inline_query_current_chat: "" }]]
@@ -269,6 +272,54 @@ async function prepareAndSwap(inlineMessageId, spotifyTrack) {
     console.error("Audio swap failed:", err);
     await editText(inlineMessageId, `Couldn't swap in the test audio.\n${spotifyTrack.title}\nTry another result.`);
   }
+}
+
+async function resolveSongLinks(track) {
+  const fallbackOther = track.spotifyId ? `https://song.link/s/${track.spotifyId}` : track.spotifyUrl;
+  const fallback = {
+    spotify: track.spotifyUrl,
+    appleMusic: undefined,
+    other: fallbackOther
+  };
+
+  if (!track.spotifyUrl) return fallback;
+
+  try {
+    const url = new URL("https://api.song.link/v1-alpha.1/links");
+    url.searchParams.set("url", track.spotifyUrl);
+    if (SONGLINK_API_KEY) url.searchParams.set("key", SONGLINK_API_KEY);
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Song.link failed: ${res.status}`);
+
+    const data = await res.json();
+    return {
+      spotify: data.linksByPlatform?.spotify?.url || track.spotifyUrl,
+      appleMusic: data.linksByPlatform?.appleMusic?.url,
+      other: data.pageUrl || fallbackOther
+    };
+  } catch (err) {
+    console.error("Song.link lookup failed:", err);
+    return fallback;
+  }
+}
+
+function buildAudioCaption(spotifyTrack, tune, links) {
+  const linkParts = [
+    links.spotify ? makeHtmlLink("Spotify", links.spotify) : undefined,
+    links.appleMusic ? makeHtmlLink("Apple Music", links.appleMusic) : undefined,
+    links.other ? makeHtmlLink("Other", links.other) : undefined
+  ].filter(Boolean);
+
+  return [
+    `Spotify pick: ${escapeHtml(spotifyTrack.title)} - ${escapeHtml(spotifyTrack.artist)}`,
+    `Test audio: ${escapeHtml(tune.credit)}`,
+    linkParts.length ? `Listen: ${linkParts.join(" | ")}` : undefined
+  ].filter(Boolean).join("\n");
+}
+
+function makeHtmlLink(label, url) {
+  return `<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`;
 }
 
 function handleSpotifyLogin(url, res) {
