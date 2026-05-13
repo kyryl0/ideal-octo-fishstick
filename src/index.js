@@ -1,12 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
-import { execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
 
 loadEnvFile();
 
@@ -18,7 +13,6 @@ const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const SPOTIFY_SCOPE = "user-read-recently-played";
 const SPOTIFY_REDIRECT_URI = `${PUBLIC_BASE_URL}/spotify/callback`;
-const SONGLINK_API_KEY = process.env.SONGLINK_API_KEY;
 const DATA_DIR = join(process.cwd(), "data");
 const TOKEN_PATH = join(DATA_DIR, "spotify-tokens.json");
 
@@ -31,7 +25,29 @@ const chosenTracks = new Map();
 const jobs = new Map();
 let updateOffset = 0;
 
-
+const testTunes = [
+  {
+    title: "SoundHelix Song 1",
+    performer: "T. Schürger / SoundHelix",
+    durationSeconds: 372,
+    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+    credit: "SoundHelix Song 1 by T. Schürger, provided by SoundHelix."
+  },
+  {
+    title: "SoundHelix Song 2",
+    performer: "T. Schürger / SoundHelix",
+    durationSeconds: 345,
+    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+    credit: "SoundHelix Song 2 by T. Schürger, provided by SoundHelix."
+  },
+  {
+    title: "SoundHelix Song 3",
+    performer: "T. Schürger / SoundHelix",
+    durationSeconds: 342,
+    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
+    credit: "SoundHelix Song 3 by T. Schürger, provided by SoundHelix."
+  }
+];
 
 createServer(async (req, res) => {
   try {
@@ -225,33 +241,25 @@ async function handleChosenInlineResult(chosen) {
   const jobKey = `${chosen.inline_message_id}:${chosen.result_id}`;
   if (jobs.has(jobKey)) return;
 
-  jobs.set(jobKey, prepareAndSwap(chosen.inline_message_id, track, chosen.from.id).finally(() => jobs.delete(jobKey)));
+  jobs.set(jobKey, prepareAndSwap(chosen.inline_message_id, track).finally(() => jobs.delete(jobKey)));
 }
 
-async function prepareAndSwap(inlineMessageId, spotifyTrack, fromUserId) {
-  let downloadDir = null;
+async function prepareAndSwap(inlineMessageId, spotifyTrack) {
   try {
-    await editText(inlineMessageId, `Downloading...\n${spotifyTrack.title}\n${spotifyTrack.artist} - ${spotifyTrack.album}`);
+    await editText(inlineMessageId, `Loading test audio...\n${spotifyTrack.title}\n${spotifyTrack.artist} - ${spotifyTrack.album}`);
+    await sleep(1200);
 
-    const { filePath, dir } = await downloadSpotifyTrack(spotifyTrack.spotifyUrl);
-    downloadDir = dir;
-
-    const links = await resolveSongLinks(spotifyTrack);
-
-    // Inline messages only accept file_id or URL — upload to user's DM silently to get a file_id.
-    const sentMessage = await uploadAudioToTelegram(fromUserId, filePath, spotifyTrack);
-    const fileId = sentMessage.audio.file_id;
-    await telegram("deleteMessage", { chat_id: fromUserId, message_id: sentMessage.message_id });
+    const tune = pickRandom(testTunes);
 
     await telegram("editMessageMedia", {
       inline_message_id: inlineMessageId,
       media: {
         type: "audio",
-        media: fileId,
-        title: spotifyTrack.title,
-        performer: spotifyTrack.artist,
-        caption: buildAudioCaption(spotifyTrack, links),
-        parse_mode: "HTML"
+        media: tune.url,
+        title: tune.title,
+        performer: tune.performer,
+        duration: tune.durationSeconds,
+        caption: `Spotify pick: ${spotifyTrack.title} - ${spotifyTrack.artist}\nTest audio: ${tune.credit}`
       },
       reply_markup: {
         inline_keyboard: [[{ text: "Show recent Spotify songs", switch_inline_query_current_chat: "" }]]
@@ -259,98 +267,8 @@ async function prepareAndSwap(inlineMessageId, spotifyTrack, fromUserId) {
     });
   } catch (err) {
     console.error("Audio swap failed:", err);
-    await editText(inlineMessageId, `Couldn't get the audio.\n${spotifyTrack.title}\nTry another result.`);
-  } finally {
-    if (downloadDir) {
-      try { rmSync(downloadDir, { recursive: true, force: true }); } catch {}
-    }
+    await editText(inlineMessageId, `Couldn't swap in the test audio.\n${spotifyTrack.title}\nTry another result.`);
   }
-}
-
-async function downloadSpotifyTrack(spotifyUrl) {
-  const dir = join(tmpdir(), `spotifydl-${randomBytes(8).toString("hex")}`);
-  mkdirSync(dir, { recursive: true });
-  try {
-    await execFileAsync("spotifydl", [spotifyUrl], {
-      cwd: dir,
-      timeout: 120_000,
-      env: {
-        ...process.env,
-        // spotify-dl picks these up for its own Spotify API calls
-        SPOTIFY_API_CLIENT_ID: SPOTIFY_CLIENT_ID,
-        SPOTIFY_API_CLIENT_SECRET: SPOTIFY_CLIENT_SECRET
-      }
-    });
-    const files = readdirSync(dir).filter(f => /\.(mp3|m4a|ogg|opus|flac)$/i.test(f));
-    if (files.length === 0) throw new Error("spotifydl produced no audio file");
-    return { filePath: join(dir, files[0]), dir };
-  } catch (err) {
-    try { rmSync(dir, { recursive: true, force: true }); } catch {}
-    throw err;
-  }
-}
-
-async function uploadAudioToTelegram(chatId, filePath, track) {
-  const fileBuffer = readFileSync(filePath);
-  const fileName = filePath.split("/").pop();
-
-  const form = new FormData();
-  form.append("chat_id", String(chatId));
-  form.append("audio", new Blob([fileBuffer]), fileName);
-  form.append("title", track.title);
-  form.append("performer", track.artist);
-
-  const res = await fetch(`${apiBase}/sendAudio`, { method: "POST", body: form });
-  const data = await res.json();
-  if (!data.ok) throw new Error(`sendAudio failed: ${data.description}`);
-  return data.result;
-}
-
-async function resolveSongLinks(track) {
-  const fallbackOther = track.spotifyId ? `https://song.link/s/${track.spotifyId}` : track.spotifyUrl;
-  const fallback = {
-    spotify: track.spotifyUrl,
-    appleMusic: undefined,
-    other: fallbackOther
-  };
-
-  if (!track.spotifyUrl) return fallback;
-
-  try {
-    const url = new URL("https://api.song.link/v1-alpha.1/links");
-    url.searchParams.set("url", track.spotifyUrl);
-    if (SONGLINK_API_KEY) url.searchParams.set("key", SONGLINK_API_KEY);
-
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Song.link failed: ${res.status}`);
-
-    const data = await res.json();
-    return {
-      spotify: data.linksByPlatform?.spotify?.url || track.spotifyUrl,
-      appleMusic: data.linksByPlatform?.appleMusic?.url,
-      other: data.pageUrl || fallbackOther
-    };
-  } catch (err) {
-    console.error("Song.link lookup failed:", err);
-    return fallback;
-  }
-}
-
-function buildAudioCaption(spotifyTrack, links) {
-  const linkParts = [
-    links.spotify ? makeHtmlLink("Spotify", links.spotify) : undefined,
-    links.appleMusic ? makeHtmlLink("Apple Music", links.appleMusic) : undefined,
-    links.other ? makeHtmlLink("Other", links.other) : undefined
-  ].filter(Boolean);
-
-  return [
-    `${escapeHtml(spotifyTrack.title)} - ${escapeHtml(spotifyTrack.artist)}`,
-    linkParts.length ? `Listen: ${linkParts.join(" | ")}` : undefined
-  ].filter(Boolean).join("\n");
-}
-
-function makeHtmlLink(label, url) {
-  return `<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`;
 }
 
 function handleSpotifyLogin(url, res) {
@@ -528,6 +446,10 @@ function withExpiry(token) {
     ...token,
     expires_at: Date.now() + token.expires_in * 1000
   };
+}
+
+function pickRandom(items) {
+  return items[Math.floor(Math.random() * items.length)];
 }
 
 function sendText(res, status, text) {
