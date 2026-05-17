@@ -6,11 +6,19 @@ let source = readFileSync(indexPath, "utf8");
 const replacements = [
   [
     "appleMusic: undefined,",
-    "youtubeMusic: undefined,"
+    "youtubeMusic: makeYoutubeMusicSearchUrl(track),"
+  ],
+  [
+    "youtubeMusic: undefined,",
+    "youtubeMusic: makeYoutubeMusicSearchUrl(track),"
   ],
   [
     "appleMusic: data.linksByPlatform?.appleMusic?.url,",
-    "youtubeMusic: data.linksByPlatform?.youtubeMusic?.url,"
+    "youtubeMusic: data.linksByPlatform?.youtubeMusic?.url || makeYoutubeMusicSearchUrl(track),"
+  ],
+  [
+    "youtubeMusic: data.linksByPlatform?.youtubeMusic?.url,",
+    "youtubeMusic: data.linksByPlatform?.youtubeMusic?.url || makeYoutubeMusicSearchUrl(track),"
   ],
   [
     "links.appleMusic ? makeHtmlLink(\"Apple Music\", links.appleMusic) : undefined,",
@@ -49,6 +57,15 @@ const replacements = [
   ]
 ];
 
+const helper = `
+function makeYoutubeMusicSearchUrl(track) {
+  const query = [track.title, track.artist].filter(Boolean).join(" ");
+  const url = new URL("https://music.youtube.com/search");
+  url.searchParams.set("q", query);
+  return url.toString();
+}
+`;
+
 let changed = false;
 
 for (const [before, after] of replacements) {
@@ -61,6 +78,15 @@ for (const [before, after] of replacements) {
   if (!source.includes(after)) {
     throw new Error(`Could not apply caption format patch. Missing pattern: ${before}`);
   }
+}
+
+if (!source.includes("function makeYoutubeMusicSearchUrl(track)")) {
+  const insertionPoint = "\nfunction buildAudioCaption(spotifyTrack, audio, links) {";
+  if (!source.includes(insertionPoint)) {
+    throw new Error("Could not insert YouTube Music fallback helper.");
+  }
+  source = source.replace(insertionPoint, `${helper}${insertionPoint}`);
+  changed = true;
 }
 
 if (changed) {
