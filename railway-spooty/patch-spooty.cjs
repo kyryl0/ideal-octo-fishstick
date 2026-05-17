@@ -26,7 +26,7 @@ replaceOnce(cookiesBefore, cookiesAfter, 'cookie options');
 
 const audioQualityBefore = "audioQuality: this.configService.get('QUALITY'),";
 const audioQualityAfter =
-  "audioQuality: this.configService.get('QUALITY'),\n                format: process.env.YTDLP_FORMAT || 'bestaudio/best',";
-replaceOnce(audioQualityBefore, audioQualityAfter, 'audio format fallback');
+  "audioQuality: this.configService.get('QUALITY'),\n                format: process.env.YTDLP_FORMAT || 'bestaudio/best',\n                verbose: process.env.YTDLP_VERBOSE === '1',";
+replaceOnce(audioQualityBefore, audioQualityAfter, 'audio options');
 
 fs.writeFileSync(file, src);
