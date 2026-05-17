@@ -60,6 +60,10 @@ const replacements = [
   [
     `text: "Connect Spotify, then use me inline in any chat.",`,
     `text: ${JSON.stringify(welcomeMessage)},`
+  ],
+  [
+    "cache_time: 1,",
+    "cache_time: 0,"
   ]
 ];
 
