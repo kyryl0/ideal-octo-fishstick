@@ -49,13 +49,88 @@ replaceOnce(
   "YouTube song links"
 );
 
-replaceOnce(
-  `function makeResultId(telegramUserId, track, index) {\n  const raw = \`${telegramUserId}:\${track.spotifyId}:\${track.playedAt}:\${index}\`;\n  return \`sp:\${createHash("sha256").update(raw).digest("base64url").slice(0, 32)}\`;\n}\n`,
-  `function makeResultId(telegramUserId, track, index) {\n  const raw = \`${telegramUserId}:\${track.spotifyId}:\${track.playedAt}:\${index}\`;\n  return \`sp:\${createHash("sha256").update(raw).digest("base64url").slice(0, 32)}\`;\n}\n\nfunction makeYoutubeResultId(telegramUserId, track) {\n  const raw = \`${telegramUserId}:\${track.youtubeId || track.youtubeUrl}:\${track.title}\`;\n  return \`yt:\${createHash("sha256").update(raw).digest("base64url").slice(0, 32)}\`;\n}\n`,
-  "YouTube result id helper"
-);
+const resultIdBefore = 'function makeResultId(telegramUserId, track, index) {\n  const raw = `${telegramUserId}:${track.spotifyId}:${track.playedAt}:${index}`;\n  return `sp:${createHash("sha256").update(raw).digest("base64url").slice(0, 32)}`;\n}\n';
+const resultIdAfter = 'function makeResultId(telegramUserId, track, index) {\n  const raw = `${telegramUserId}:${track.spotifyId}:${track.playedAt}:${index}`;\n  return `sp:${createHash("sha256").update(raw).digest("base64url").slice(0, 32)}`;\n}\n\nfunction makeYoutubeResultId(telegramUserId, track) {\n  const raw = `${telegramUserId}:${track.youtubeId || track.youtubeUrl}:${track.title}`;\n  return `yt:${createHash("sha256").update(raw).digest("base64url").slice(0, 32)}`;\n}\n';
+replaceOnce(resultIdBefore, resultIdAfter, "YouTube result id helper");
 
-const helper = `\nasync function getYoutubeInlineTrack(queryText) {\n  const youtubeUrl = extractYoutubeUrl(queryText);\n  if (!youtubeUrl) return undefined;\n\n  const youtubeId = getYoutubeVideoId(youtubeUrl);\n  const normalizedUrl = youtubeId ? \`https://www.youtube.com/watch?v=\${youtubeId}\` : youtubeUrl;\n  const title = await getYoutubeTitle(normalizedUrl);\n\n  return {\n    source: "youtube",\n    youtubeId,\n    youtubeUrl: normalizedUrl,\n    title,\n    artist: "YouTube",\n    album: "Direct link",\n    artwork: youtubeId ? \`https://img.youtube.com/vi/\${youtubeId}/mqdefault.jpg\` : undefined,\n    playedAt: new Date().toISOString(),\n    spotifyUrl: undefined\n  };\n}\n\nfunction extractYoutubeUrl(queryText) {\n  const text = String(queryText || "").trim();\n  if (!text) return undefined;\n\n  const match = text.match(/(?:https?:\\/\\/)?(?:www\\.|m\\.)?(?:youtube\\.com|music\\.youtube\\.com|youtu\\.be)\\/[^\\s<>]+/i);\n  if (!match) return undefined;\n\n  const raw = match[0].startsWith("http") ? match[0] : \`https://\${match[0]}\`;\n  try {\n    const url = new URL(raw);\n    if (!isYoutubeHost(url.hostname)) return undefined;\n    return url.toString();\n  } catch {\n    return undefined;\n  }\n}\n\nfunction isYoutubeHost(hostname) {\n  const host = String(hostname || "").toLowerCase();\n  return host === "youtu.be" || host === "youtube.com" || host.endsWith(".youtube.com");\n}\n\nfunction getYoutubeVideoId(youtubeUrl) {\n  try {\n    const url = new URL(youtubeUrl);\n    if (url.hostname.toLowerCase() === "youtu.be") {\n      return url.pathname.split("/").filter(Boolean)[0];\n    }\n    if (url.pathname === "/watch") {\n      return url.searchParams.get("v") || undefined;\n    }\n    const parts = url.pathname.split("/").filter(Boolean);\n    if (["shorts", "embed", "live"].includes(parts[0])) return parts[1];\n  } catch {\n    return undefined;\n  }\n  return undefined;\n}\n\nasync function getYoutubeTitle(youtubeUrl) {\n  try {\n    const url = new URL("https://www.youtube.com/oembed");\n    url.searchParams.set("url", youtubeUrl);\n    url.searchParams.set("format", "json");\n\n    const res = await fetch(url);\n    if (!res.ok) throw new Error(\`YouTube oEmbed failed: \${res.status}\`);\n\n    const data = await res.json();\n    return data.title || "YouTube audio";\n  } catch (err) {\n    console.error("YouTube title lookup failed:", err);\n    return "YouTube audio";\n  }\n}\n`;
+const helper = `
+async function getYoutubeInlineTrack(queryText) {
+  const youtubeUrl = extractYoutubeUrl(queryText);
+  if (!youtubeUrl) return undefined;
+
+  const youtubeId = getYoutubeVideoId(youtubeUrl);
+  const normalizedUrl = youtubeId ? \`https://www.youtube.com/watch?v=\${youtubeId}\` : youtubeUrl;
+  const title = await getYoutubeTitle(normalizedUrl);
+
+  return {
+    source: "youtube",
+    youtubeId,
+    youtubeUrl: normalizedUrl,
+    title,
+    artist: "YouTube",
+    album: "Direct link",
+    artwork: youtubeId ? \`https://img.youtube.com/vi/\${youtubeId}/mqdefault.jpg\` : undefined,
+    playedAt: new Date().toISOString(),
+    spotifyUrl: undefined
+  };
+}
+
+function extractYoutubeUrl(queryText) {
+  const text = String(queryText || "").trim();
+  if (!text) return undefined;
+
+  const match = text.match(/(?:https?:\\/\\/)?(?:www\\.|m\\.)?(?:youtube\\.com|music\\.youtube\\.com|youtu\\.be)\\/[^\\s<>]+/i);
+  if (!match) return undefined;
+
+  const raw = match[0].startsWith("http") ? match[0] : \`https://\${match[0]}\`;
+  try {
+    const url = new URL(raw);
+    if (!isYoutubeHost(url.hostname)) return undefined;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function isYoutubeHost(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  return host === "youtu.be" || host === "youtube.com" || host.endsWith(".youtube.com");
+}
+
+function getYoutubeVideoId(youtubeUrl) {
+  try {
+    const url = new URL(youtubeUrl);
+    if (url.hostname.toLowerCase() === "youtu.be") {
+      return url.pathname.split("/").filter(Boolean)[0];
+    }
+    if (url.pathname === "/watch") {
+      return url.searchParams.get("v") || undefined;
+    }
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (["shorts", "embed", "live"].includes(parts[0])) return parts[1];
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+async function getYoutubeTitle(youtubeUrl) {
+  try {
+    const url = new URL("https://www.youtube.com/oembed");
+    url.searchParams.set("url", youtubeUrl);
+    url.searchParams.set("format", "json");
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(\`YouTube oEmbed failed: \${res.status}\`);
+
+    const data = await res.json();
+    return data.title || "YouTube audio";
+  } catch (err) {
+    console.error("YouTube title lookup failed:", err);
+    return "YouTube audio";
+  }
+}
+`;
 
 if (!source.includes("async function getYoutubeInlineTrack(queryText)")) {
   const insertionPoint = "\nasync function answerWithYoutubeResult";
