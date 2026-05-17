@@ -14,7 +14,11 @@ const replacements = [
   ],
   [
     "links.appleMusic ? makeHtmlLink(\"Apple Music\", links.appleMusic) : undefined,",
-    "links.youtubeMusic ? makeHtmlLink(\"Youtube Music\", links.youtubeMusic) : undefined,"
+    "links.youtubeMusic ? makeHtmlLink(\"Youtube Music 😒\", links.youtubeMusic) : undefined,"
+  ],
+  [
+    "links.youtubeMusic ? makeHtmlLink(\"Youtube Music\", links.youtubeMusic) : undefined,",
+    "links.youtubeMusic ? makeHtmlLink(\"Youtube Music 😒\", links.youtubeMusic) : undefined,"
   ],
   [
     `  return [
@@ -22,7 +26,26 @@ const replacements = [
     audio.credit ? \`Audio: \${escapeHtml(audio.credit)}\` : undefined,
     linkParts.length ? \`Listen: \${linkParts.join(" | ")}\` : undefined
   ].filter(Boolean).join("\\n");`,
-    `  return linkParts.length ? \`🎧 \${linkParts.join(" | ")}\` : undefined;`
+    `  return linkParts.length ? \`💋 \${linkParts.join(" | ")}\` : undefined;`
+  ],
+  [
+    `  return linkParts.length ? \`🎧 \${linkParts.join(" | ")}\` : undefined;`,
+    `  return linkParts.length ? \`💋 \${linkParts.join(" | ")}\` : undefined;`
+  ],
+  [
+    `{ text: "Loading audio...", callback_data: "loading" }`,
+    `{ text: "Loading... 😵‍💫", callback_data: "loading" }`
+  ],
+  [
+    `{ text: "Preparing...", callback_data: "loading" }`,
+    `{ text: "Loading... 😵‍💫", callback_data: "loading" }`
+  ],
+  [
+    `,
+      reply_markup: {
+        inline_keyboard: [[{ text: "Show recent Spotify songs", switch_inline_query_current_chat: "" }]]
+      }`,
+    ``
   ]
 ];
 
@@ -30,7 +53,7 @@ let changed = false;
 
 for (const [before, after] of replacements) {
   if (source.includes(before)) {
-    source = source.replace(before, after);
+    source = source.replaceAll(before, after);
     changed = true;
     continue;
   }
