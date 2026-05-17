@@ -9,7 +9,7 @@ This is a working inline-mode Telegram bot skeleton for the flow:
 5. Telegram sends a small placeholder message immediately.
 6. Bot edits that inline message into an audio message.
 
-By default, the final audio is a SoundHelix test MP3. With `AUDIO_PROVIDER=spooty`, it asks a self-hosted Spooty instance to download the selected Spotify track, then serves the finished audio back to Telegram.
+By default, the final audio comes from a self-hosted Spooty instance. The bot asks Spooty to download the selected Spotify track, then serves the finished audio back to Telegram.
 
 ## Why this shape
 
@@ -17,39 +17,73 @@ Telegram does **not** support uploading a new local file when editing an inline 
 
 ## Deploy on Railway
 
-Railway already gives you the public HTTPS endpoint, so you do not need a separate ngrok or Cloudflare tunnel in production.
+This repo is ready for Railway GitHub auto-deploys. Railway gives the bot a public HTTPS endpoint, so you do not need a separate ngrok or Cloudflare tunnel in production.
 
-1. Create a new Railway project from this folder or GitHub repo.
-2. In the service settings, open **Networking** and choose **Generate Domain**.
-3. In Railway variables, add:
+1. Use the existing Railway service connected to this GitHub repo.
+2. In the bot service settings, open **Networking** and choose **Generate Domain** if it does not already have one.
+3. In the bot service variables, add:
 
 ```text
 BOT_TOKEN=123456:replace-me
 SPOTIFY_CLIENT_ID=replace-me
 SPOTIFY_CLIENT_SECRET=replace-me
+AUDIO_PROVIDER=spooty
 ```
 
 Do not set `PORT` or `APP_PORT`; Railway provides `PORT` and the app reads it automatically. You also usually do not need `PUBLIC_BASE_URL`; the app automatically uses `https://$RAILWAY_PUBLIC_DOMAIN`.
 
-4. Deploy/redeploy the service.
-5. Open `https://your-service.up.railway.app/health`. It should return `ok`.
-6. In Spotify, set the redirect URI to:
+4. Add a second Railway service for Spooty from this same GitHub repo. In the new service settings, set the root directory to:
+
+```text
+/railway-spooty
+```
+
+This service uses `railway-spooty/Dockerfile`, which wraps `raiper34/spooty:latest` and installs the missing SQLite driver required by Spooty.
+
+Name the service `spooty` if possible. With that service name, the bot automatically uses this internal Railway address:
+
+```text
+http://spooty.railway.internal:3000
+```
+
+If you use another service name or a public Spooty domain, set this bot variable:
+
+```text
+SPOOTY_BASE_URL=https://your-spooty-service.up.railway.app
+```
+
+5. In the Spooty service variables, add:
+
+```text
+SPOTIFY_CLIENT_ID=replace-me
+SPOTIFY_CLIENT_SECRET=replace-me
+PORT=3000
+FORMAT=mp3
+REDIS_RUN=true
+REDIS_HOST=localhost
+REDIS_PORT=6379
+YT_DOWNLOADS_PER_MINUTE=3
+```
+
+6. Deploy/redeploy both services.
+7. Open `https://your-service.up.railway.app/health`. It should return `ok`.
+8. In Spotify, set the redirect URI to:
 
 ```text
 https://your-service.up.railway.app/spotify/callback
 ```
 
-7. In Telegram, open your bot and send `/start`.
+9. In Telegram, open your bot and send `/start`.
 
 If Railway asks which port the service domain should target, use the port Railway detects for the running service. Do not override the `PORT` variable manually.
 
 ## Spooty Audio Backend
 
-Keep these unset to use the SoundHelix fallback. To use Spooty, run a Spooty service and add these variables:
+Spooty is the default backend. If the Railway Spooty service is named `spooty`, this bot uses the internal address automatically:
 
 ```text
 AUDIO_PROVIDER=spooty
-SPOOTY_BASE_URL=https://your-spooty-service.example.com
+SPOOTY_BASE_URL=http://spooty.railway.internal:3000
 SPOOTY_AUDIO_EXTENSION=mp3
 ```
 
