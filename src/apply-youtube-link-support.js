@@ -49,10 +49,6 @@ replaceOnce(
   "YouTube song links"
 );
 
-const resultIdBefore = 'function makeResultId(telegramUserId, track, index) {\n  const raw = `${telegramUserId}:${track.spotifyId}:${track.playedAt}:${index}`;\n  return `sp:${createHash("sha256").update(raw).digest("base64url").slice(0, 32)}`;\n}\n';
-const resultIdAfter = 'function makeResultId(telegramUserId, track, index) {\n  const raw = `${telegramUserId}:${track.spotifyId}:${track.playedAt}:${index}`;\n  return `sp:${createHash("sha256").update(raw).digest("base64url").slice(0, 32)}`;\n}\n\nfunction makeYoutubeResultId(telegramUserId, track) {\n  const raw = `${telegramUserId}:${track.youtubeId || track.youtubeUrl}:${track.title}`;\n  return `yt:${createHash("sha256").update(raw).digest("base64url").slice(0, 32)}`;\n}\n';
-replaceOnce(resultIdBefore, resultIdAfter, "YouTube result id helper");
-
 const helper = `
 async function getYoutubeInlineTrack(queryText) {
   const youtubeUrl = extractYoutubeUrl(queryText);
@@ -73,6 +69,11 @@ async function getYoutubeInlineTrack(queryText) {
     playedAt: new Date().toISOString(),
     spotifyUrl: undefined
   };
+}
+
+function makeYoutubeResultId(telegramUserId, track) {
+  const raw = [telegramUserId, track.youtubeId || track.youtubeUrl, track.title].join(":");
+  return "yt:" + createHash("sha256").update(raw).digest("base64url").slice(0, 32);
 }
 
 function extractYoutubeUrl(queryText) {
