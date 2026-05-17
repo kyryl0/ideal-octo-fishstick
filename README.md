@@ -9,7 +9,7 @@ This is a working inline-mode Telegram bot skeleton for the flow:
 5. Telegram sends a small placeholder message immediately.
 6. Bot edits that inline message into an audio message.
 
-By default, the final audio comes from a self-hosted Spooty instance. The bot asks Spooty to download the selected Spotify track, then serves the finished audio back to Telegram.
+With `AUDIO_PROVIDER=spooty`, the final audio comes from a self-hosted Spooty instance. The bot asks Spooty to download the selected Spotify track, then serves the finished audio back to Telegram.
 
 ## Why this shape
 
@@ -40,7 +40,7 @@ Do not set `PORT` or `APP_PORT`; Railway provides `PORT` and the app reads it au
 
 This service uses `railway-spooty/Dockerfile`, which wraps `raiper34/spooty:latest` and installs the missing SQLite driver required by Spooty.
 
-Name the service `spooty` if possible. With that service name, the bot automatically uses this internal Railway address:
+Name the service `spooty` if possible. With that service name, the bot uses this internal Railway address:
 
 ```text
 http://spooty.railway.internal:3000
@@ -79,7 +79,7 @@ If Railway asks which port the service domain should target, use the port Railwa
 
 ## Spooty Audio Backend
 
-Spooty is the default backend. If the Railway Spooty service is named `spooty`, this bot uses the internal address automatically:
+Enable Spooty on the bot with these variables:
 
 ```text
 AUDIO_PROVIDER=spooty
