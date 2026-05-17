@@ -10,8 +10,9 @@ COPY start-spooty.sh /spooty/start-spooty.sh
 COPY patch-spooty.cjs /spooty/patch-spooty.cjs
 
 RUN apk add --no-cache make g++ python3 py3-pip \
-  && python3 -m pip install --break-system-packages --no-cache-dir yt-dlp \
+  && python3 -m pip install --break-system-packages --no-cache-dir "yt-dlp[default]" \
   && yt-dlp --version \
+  && python3 -m pip show yt-dlp-ejs \
   && chmod +x /spooty/start-spooty.sh \
   && YTDLP_PATH=$(which yt-dlp) \
   && echo "yt-dlp installed at: $YTDLP_PATH" \
@@ -19,6 +20,7 @@ RUN apk add --no-cache make g++ python3 py3-pip \
   && grep -F "binaryPath" backend/shared/youtube.service.js \
   && grep -F "process.env.YT_COOKIES_FILE" backend/shared/youtube.service.js \
   && grep -F "process.env.YTDLP_FORMAT" backend/shared/youtube.service.js \
+  && grep -F "process.env.YTDLP_VERBOSE" backend/shared/youtube.service.js \
   && node -e "const { YtDlp } = require('ytdlp-nodejs'); new YtDlp({ binaryPath: process.env.YTDLP_BINARY_PATH }); console.log('yt-dlp runtime path is usable')" \
   && npm install sqlite3@5.1.7 --save \
   && node -e "require('sqlite3'); console.log('sqlite3 runtime dependency is installed')" \
