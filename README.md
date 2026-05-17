@@ -38,7 +38,7 @@ Do not set `PORT` or `APP_PORT`; Railway provides `PORT` and the app reads it au
 /railway-spooty
 ```
 
-This service uses `railway-spooty/Dockerfile`, which wraps `raiper34/spooty:latest` and installs the missing SQLite driver required by Spooty.
+This service uses `railway-spooty/Dockerfile`, which wraps `raiper34/spooty:latest` and installs the runtime dependencies Spooty still needs in the Railway image: SQLite support and a `yt-dlp` executable on `PATH`.
 
 Name the service `spooty` if possible. With that service name, the bot uses this internal Railway address:
 
