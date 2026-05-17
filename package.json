@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node src/apply-caption-format.js && node src/index.js"
+    "start": "node src/apply-caption-format.js && node src/apply-youtube-link-support.js && node src/index.js"
   },
   "dependencies": {},
   "engines": {
