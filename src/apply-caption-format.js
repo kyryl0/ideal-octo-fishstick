@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 const indexPath = new URL("./index.js", import.meta.url);
 let source = readFileSync(indexPath, "utf8");
 
-const welcomeMessage = `Welcome to the tiny song contraption, babe. 💅\n\nSpotify girlies: connect your account, then summon me inline in any chat and pick a recent track. Link divas: paste a YouTube or YouTube Music URL inline and I’ll fetch that too. 🪩\n\nTiny bureaucracy jumpscare: the Spotify app is still in development mode, so if login acts allergic to you, message @kyrylo0 first and I’ll add you to the whitelist. 🧾✨`;
+const welcomeMessage = `Welcome to the tiny song contraption, babe. 💅\n\nRight now I only flirt with Spotify: connect your account, then summon me inline in any chat and pick a recent track. I’ll do the audio nonsense. 🪩\n\nTiny bureaucracy jumpscare: the Spotify app is still in development mode, so if login acts allergic to you, message @kyrylo0 first and I’ll add you to the whitelist. 🧾✨`;
 
 const replacements = [
   [
