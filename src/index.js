@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -15,11 +15,11 @@ const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const SONGLINK_API_KEY = process.env.SONGLINK_API_KEY;
 const AUDIO_PROVIDER = process.env.AUDIO_PROVIDER || "soundhelix";
-const LICENSED_SPOTIFY_MODULE = process.env.LICENSED_SPOTIFY_MODULE || (AUDIO_PROVIDER === "licensed_spotify" ? "spdl" : undefined);
-const LICENSED_SPOTIFY_COOKIE = process.env.LICENSED_SPOTIFY_COOKIE || process.env.SP_DC_COOKIE;
-const LICENSED_TELEGRAM_MEDIA_TYPE = process.env.LICENSED_TELEGRAM_MEDIA_TYPE || "audio";
-const LICENSED_AUDIO_FORMAT = normalizeAudioFormat(process.env.LICENSED_AUDIO_FORMAT || "mp3");
-const LICENSED_AUDIO_FORMATS = getAudioFormatCandidates(LICENSED_AUDIO_FORMAT);
+const TELEGRAM_MEDIA_TYPE = process.env.TELEGRAM_MEDIA_TYPE || "audio";
+const SPOOTY_BASE_URL = process.env.SPOOTY_BASE_URL ? trimTrailingSlash(process.env.SPOOTY_BASE_URL) : "";
+const SPOOTY_POLL_INTERVAL_MS = Number(process.env.SPOOTY_POLL_INTERVAL_MS || 3000);
+const SPOOTY_POLL_TIMEOUT_MS = Number(process.env.SPOOTY_POLL_TIMEOUT_MS || 180000);
+const SPOOTY_AUDIO_EXTENSION = normalizeAudioExtension(process.env.SPOOTY_AUDIO_EXTENSION || "mp3");
 const SPOTIFY_SCOPE = "user-read-recently-played";
 const SPOTIFY_REDIRECT_URI = `${PUBLIC_BASE_URL}/spotify/callback`;
 const DATA_DIR = join(process.cwd(), "data");
@@ -34,7 +34,6 @@ const spotifyTokens = loadJson(TOKEN_PATH, {});
 const loginStates = new Map();
 const chosenTracks = new Map();
 const jobs = new Map();
-let licensedSpotifyClient;
 let updateOffset = 0;
 
 const testTunes = [
@@ -273,7 +272,7 @@ async function prepareAndSwap(inlineMessageId, spotifyTrack) {
 
 async function editInlineMedia(inlineMessageId, audio, spotifyTrack, links) {
   const media = {
-    type: LICENSED_TELEGRAM_MEDIA_TYPE,
+    type: TELEGRAM_MEDIA_TYPE,
     media: audio.url,
     title: audio.title,
     performer: audio.performer,
@@ -309,8 +308,8 @@ async function editInlineMedia(inlineMessageId, audio, spotifyTrack, links) {
 }
 
 async function resolveAudio(spotifyTrack) {
-  if (AUDIO_PROVIDER === "licensed_spotify") {
-    return downloadLicensedSpotifyAudio(spotifyTrack);
+  if (AUDIO_PROVIDER === "spooty") {
+    return downloadSpootyAudio(spotifyTrack);
   }
 
   const tune = pickRandom(testTunes);
@@ -323,9 +322,9 @@ async function resolveAudio(spotifyTrack) {
   };
 }
 
-async function downloadLicensedSpotifyAudio(spotifyTrack) {
-  if (!LICENSED_SPOTIFY_MODULE) {
-    throw new Error("AUDIO_PROVIDER=licensed_spotify requires LICENSED_SPOTIFY_MODULE.");
+async function downloadSpootyAudio(spotifyTrack) {
+  if (!SPOOTY_BASE_URL) {
+    throw new Error("AUDIO_PROVIDER=spooty requires SPOOTY_BASE_URL.");
   }
 
   if (!spotifyTrack.spotifyUrl) {
@@ -333,120 +332,94 @@ async function downloadLicensedSpotifyAudio(spotifyTrack) {
   }
 
   const fileBase = safeSegment(spotifyTrack.spotifyId || createHash("sha256").update(spotifyTrack.spotifyUrl).digest("hex"));
-  const client = await getLicensedSpotifyClient();
-  const errors = [];
+  const cachedFileName = findCachedAudioFile(fileBase);
 
-  for (const audioFormat of LICENSED_AUDIO_FORMATS) {
-    const fileName = `${fileBase}.${audioFormat.extension}`;
-    const filePath = join(AUDIO_DIR, fileName);
-
-    try {
-      if (!existsSync(filePath)) {
-        const download = await downloadFromLicensedProvider(client, spotifyTrack, audioFormat);
-        const stream = normalizeDownloadStream(download);
-        await pipeline(stream, createWriteStream(filePath));
-      }
-
-      return {
-        title: spotifyTrack.title,
-        performer: spotifyTrack.artist,
-        durationSeconds: undefined,
-        url: `${PUBLIC_BASE_URL}/files/${encodeURIComponent(fileName)}`,
-        credit: `Licensed Spotify audio (${audioFormat.format}).`
-      };
-    } catch (err) {
-      errors.push(`${audioFormat.format}: ${err.message}`);
-      console.error(`Licensed download failed for ${audioFormat.format}:`, err);
-    }
+  if (cachedFileName) {
+    return buildLocalAudioResult(spotifyTrack, cachedFileName);
   }
 
-  throw new Error(`All licensed audio formats failed. ${errors.join(" | ")}`);
+  const spootyTrack = await createAndWaitForSpootyTrack(spotifyTrack.spotifyUrl);
+  const fileName = `${fileBase}.${SPOOTY_AUDIO_EXTENSION}`;
+  const filePath = join(AUDIO_DIR, fileName);
+  const downloadUrl = new URL(`/api/track/download/${spootyTrack.id}`, SPOOTY_BASE_URL);
+  const res = await fetch(downloadUrl);
+
+  if (!res.ok) {
+    throw new Error(`Spooty download failed: ${res.status}`);
+  }
+
+  if (!res.body) {
+    throw new Error("Spooty download response did not include a body.");
+  }
+
+  await pipeline(Readable.fromWeb(res.body), createWriteStream(filePath));
+  return buildLocalAudioResult(spotifyTrack, fileName);
 }
 
-async function downloadFromLicensedProvider(client, spotifyTrack, audioFormat = LICENSED_AUDIO_FORMAT) {
-  const options = {
-    format: audioFormat.format,
-    output: audioFormat.format
+async function createAndWaitForSpootyTrack(spotifyUrl) {
+  const createUrl = new URL("/api/playlist", SPOOTY_BASE_URL);
+  const createRes = await fetch(createUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ spotifyUrl, active: false })
+  });
+
+  if (!createRes.ok) {
+    throw new Error(`Spooty create request failed: ${createRes.status}`);
+  }
+
+  const deadline = Date.now() + SPOOTY_POLL_TIMEOUT_MS;
+  let lastStatus = "waiting";
+
+  while (Date.now() < deadline) {
+    const playlist = await findSpootyPlaylist(spotifyUrl);
+    const track = playlist?.tracks?.[0];
+
+    if (playlist?.error) {
+      throw new Error(`Spooty playlist failed: ${playlist.error}`);
+    }
+
+    if (track?.error) {
+      throw new Error(`Spooty track failed: ${track.error}`);
+    }
+
+    if (isSpootyTrackFailed(track?.status)) {
+      throw new Error("Spooty track failed.");
+    }
+
+    if (track?.id && isSpootyTrackCompleted(track.status)) {
+      return track;
+    }
+
+    lastStatus = track ? `track status ${track.status}` : "track not created yet";
+    await sleep(SPOOTY_POLL_INTERVAL_MS);
+  }
+
+  throw new Error(`Timed out waiting for Spooty download (${lastStatus}).`);
+}
+
+async function findSpootyPlaylist(spotifyUrl) {
+  const listUrl = new URL("/api/playlist", SPOOTY_BASE_URL);
+  const res = await fetch(listUrl);
+
+  if (!res.ok) {
+    throw new Error(`Spooty playlist lookup failed: ${res.status}`);
+  }
+
+  const playlists = await res.json();
+  return (Array.isArray(playlists) ? playlists : [])
+    .filter((playlist) => playlist.spotifyUrl === spotifyUrl)
+    .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0))[0];
+}
+
+function buildLocalAudioResult(spotifyTrack, fileName) {
+  return {
+    title: spotifyTrack.title,
+    performer: spotifyTrack.artist,
+    durationSeconds: undefined,
+    url: `${PUBLIC_BASE_URL}/files/${encodeURIComponent(fileName)}`,
+    credit: "Spooty audio."
   };
-
-  if (client.download) {
-    return client.download(spotifyTrack.spotifyUrl, options);
-  }
-
-  if (client.getInfo && typeof client === "function") {
-    try {
-      const info = await client.getInfo(spotifyTrack.spotifyUrl);
-      return client(info.url || spotifyTrack.spotifyUrl, options);
-    } catch (err) {
-      console.error("Licensed provider getInfo failed; falling back to metadata search:", err);
-      return downloadFromMetadataSearch(spotifyTrack, options);
-    }
-  }
-
-  if (typeof client === "function") {
-    try {
-      return await client(spotifyTrack.spotifyUrl, options);
-    } catch (err) {
-      console.error("Licensed provider direct download failed; falling back to metadata search:", err);
-      return downloadFromMetadataSearch(spotifyTrack, options);
-    }
-  }
-
-  throw new Error(`Module ${LICENSED_SPOTIFY_MODULE} does not expose a supported download API.`);
-}
-
-async function downloadFromMetadataSearch(spotifyTrack, options) {
-  const Youtube = getModuleDefault(await import("youtube-sr"));
-  const ytdl = getModuleDefault(await import("discord-ytdl-core"));
-  const query = `${spotifyTrack.title} ${spotifyTrack.artist}`;
-
-  let video = await Youtube.searchOne(query);
-  if (!video) video = await Youtube.searchOne(spotifyTrack.title);
-  if (!video?.url || video.views === 0) {
-    throw new Error(`No downloadable audio result found for ${query}.`);
-  }
-
-  return ytdl(video.url, options);
-}
-
-function normalizeDownloadStream(download) {
-  if (download?.stream) return normalizeDownloadStream(download.stream);
-  if (download?.body) return normalizeDownloadStream(download.body);
-  if (download?.audio) return normalizeDownloadStream(download.audio);
-  if (download?.filePath) return createReadStream(download.filePath);
-  if (download?.path) return createReadStream(download.path);
-  if (typeof download === "string") return createReadStream(download);
-  if (Buffer.isBuffer(download) || download instanceof Uint8Array) return Readable.from([download]);
-  if (download?.getReader) return Readable.fromWeb(download);
-  if (download?.pipe || download?.[Symbol.asyncIterator]) return download;
-
-  throw new Error("Licensed Spotify downloader did not return a stream, buffer, or file path.");
-}
-
-function getModuleDefault(module) {
-  return module.default?.default || module.default || module;
-}
-
-async function getLicensedSpotifyClient() {
-  if (licensedSpotifyClient) return licensedSpotifyClient;
-
-  const provider = await import(LICENSED_SPOTIFY_MODULE);
-  const moduleApi = provider.default || provider;
-  const Spotify = provider.Spotify || provider.default?.Spotify;
-
-  if (Spotify?.create) {
-    licensedSpotifyClient = await Spotify.create(
-      LICENSED_SPOTIFY_COOKIE ? { cookie: normalizeSpotifyCookie(LICENSED_SPOTIFY_COOKIE) } : {}
-    );
-    return licensedSpotifyClient;
-  }
-
-  if (typeof moduleApi !== "function" && !moduleApi?.download) {
-    throw new Error(`Module ${LICENSED_SPOTIFY_MODULE} does not export Spotify.create(), download(), or a callable downloader.`);
-  }
-
-  licensedSpotifyClient = moduleApi;
-  return licensedSpotifyClient;
 }
 
 function serveAudioFile(url, res) {
@@ -724,38 +697,26 @@ function trimTrailingSlash(value) {
   return value.replace(/\/+$/, "");
 }
 
-function normalizeSpotifyCookie(value) {
-  return value.startsWith("sp_dc=") ? value : `sp_dc=${value}`;
-}
-
 function safeSegment(value) {
   return String(value).replace(/[^a-z0-9_-]+/gi, "_").slice(0, 80);
 }
 
-function normalizeAudioFormat(value) {
-  const format = String(value || "mp3").toLowerCase().replace(/^\./, "");
-  if (format === "mpeg" || format === "mp3" || format === "mp3_96") return { format: "MP3_96", extension: "mp3" };
-  if (format === "m4a" || format === "mp4" || format === "aac" || format === "mp4_128") return { format: "MP4_128", extension: "m4a" };
-  if (format === "mp4_256") return { format: "MP4_256", extension: "m4a" };
-  if (format === "ogg" || format === "oga" || format === "vorbis" || format === "ogg_vorbis_160") return { format: "OGG_VORBIS_160", extension: "ogg" };
-  if (format === "ogg_vorbis_96") return { format: "OGG_VORBIS_96", extension: "ogg" };
-  if (format === "ogg_vorbis_320") return { format: "OGG_VORBIS_320", extension: "ogg" };
-  throw new Error(`Unsupported LICENSED_AUDIO_FORMAT: ${value}`);
+function normalizeAudioExtension(value) {
+  const extension = String(value || "mp3").toLowerCase().replace(/^\./, "");
+  if (/^[a-z0-9]+$/.test(extension)) return extension;
+  throw new Error(`Unsupported SPOOTY_AUDIO_EXTENSION: ${value}`);
 }
 
-function getAudioFormatCandidates(preferred) {
-  const fallbackFormats = [
-    preferred,
-    { format: "OGG_VORBIS_160", extension: "ogg" },
-    { format: "MP4_128", extension: "m4a" },
-    { format: "OGG_VORBIS_96", extension: "ogg" }
-  ];
-  const seen = new Set();
-  return fallbackFormats.filter((item) => {
-    if (seen.has(item.format)) return false;
-    seen.add(item.format);
-    return true;
-  });
+function findCachedAudioFile(fileBase) {
+  return readdirSync(AUDIO_DIR).find((fileName) => fileName.startsWith(`${fileBase}.`));
+}
+
+function isSpootyTrackCompleted(status) {
+  return status === 4 || String(status).toLowerCase() === "completed";
+}
+
+function isSpootyTrackFailed(status) {
+  return status === 5 || String(status).toLowerCase() === "error";
 }
 
 function guessMediaType(fileName) {
@@ -784,7 +745,7 @@ function getConfigErrors() {
   if (!PUBLIC_BASE_URL) errors.push("PUBLIC_BASE_URL or RAILWAY_PUBLIC_DOMAIN");
   if (!SPOTIFY_CLIENT_ID) errors.push("SPOTIFY_CLIENT_ID");
   if (!SPOTIFY_CLIENT_SECRET) errors.push("SPOTIFY_CLIENT_SECRET");
-  if (AUDIO_PROVIDER === "licensed_spotify" && !LICENSED_SPOTIFY_MODULE) errors.push("LICENSED_SPOTIFY_MODULE");
+  if (AUDIO_PROVIDER === "spooty" && !SPOOTY_BASE_URL) errors.push("SPOOTY_BASE_URL");
   return errors;
 }
 

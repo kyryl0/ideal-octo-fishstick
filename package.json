@@ -4,12 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "postinstall": "node scripts/install-licensed-provider.js",
     "start": "node src/index.js"
   },
-  "dependencies": {
-    "spdl": "https://github.com/PwLDev/node-spdl/archive/refs/heads/main.tar.gz"
-  },
+  "dependencies": {},
   "engines": {
     "node": ">=20"
   }

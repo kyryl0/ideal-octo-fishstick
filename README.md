@@ -9,7 +9,7 @@ This is a working inline-mode Telegram bot skeleton for the flow:
 5. Telegram sends a small placeholder message immediately.
 6. Bot edits that inline message into an audio message.
 
-By default, the final audio is a SoundHelix test MP3. With `AUDIO_PROVIDER=licensed_spotify`, it downloads the selected Spotify track using the licensed provider package configured in Railway.
+By default, the final audio is a SoundHelix test MP3. With `AUDIO_PROVIDER=spooty`, it asks a self-hosted Spooty instance to download the selected Spotify track, then serves the finished audio back to Telegram.
 
 ## Why this shape
 
@@ -43,22 +43,29 @@ https://your-service.up.railway.app/spotify/callback
 
 If Railway asks which port the service domain should target, use the port Railway detects for the running service. Do not override the `PORT` variable manually.
 
-## Licensed Audio Backend
+## Spooty Audio Backend
 
-Keep these unset to use the SoundHelix fallback. To use the licensed Spotify downloader, add these Railway variables:
+Keep these unset to use the SoundHelix fallback. To use Spooty, run a Spooty service and add these variables:
 
 ```text
-AUDIO_PROVIDER=licensed_spotify
-LICENSED_SPOTIFY_MODULE=your-nda-import-specifier
-LICENSED_SPOTIFY_INSTALL_SPEC=your-nda-npm-or-git-install-specifier
-LICENSED_SPOTIFY_COOKIE=sp_dc=your-cookie-here
+AUDIO_PROVIDER=spooty
+SPOOTY_BASE_URL=https://your-spooty-service.example.com
+SPOOTY_AUDIO_EXTENSION=mp3
 ```
 
-`LICENSED_SPOTIFY_MODULE` is the string used by dynamic `import(...)`, replacing the NDA import path in code. `LICENSED_SPOTIFY_INSTALL_SPEC` is what Railway installs during `npm install`; it can be the same value, or a private npm/git install spec if that differs.
+Spooty is a separate self-hosted service, not an npm package. Configure it with its own Spotify client ID/secret and YouTube cookie settings as described in [Raiper34/spooty](https://github.com/Raiper34/spooty).
 
-The provider is expected to export `Spotify.create({ cookie })`, and `client.download(spotifyTrackUrl)` must return a readable stream. The bot saves the stream as an `.ogg` file under `data/audio`, exposes it at `/files/...`, and passes that public URL to Telegram for the inline message edit.
+The bot calls Spooty's `/api/playlist` endpoint with the selected Spotify URL, waits for the created track to reach `Completed`, downloads it from `/api/track/download/:id`, saves it under `data/audio`, exposes it at `/files/...`, and passes that public URL to Telegram for the inline message edit.
 
-The example downloader returns Ogg Vorbis. Telegram may reject OGG as `InputMediaAudio`; if that happens, the bot automatically retries the edit as a document. If your provider can output MP3 or M4A later, that is better for Telegram's audio player.
+Optional tuning:
+
+```text
+SPOOTY_POLL_INTERVAL_MS=3000
+SPOOTY_POLL_TIMEOUT_MS=180000
+TELEGRAM_MEDIA_TYPE=audio
+```
+
+Telegram may reject some formats as `InputMediaAudio`; if that happens, the bot automatically retries the edit as a document. Spooty's default `mp3` format is the best fit for Telegram's audio player.
 
 ## Spotify setup
 
