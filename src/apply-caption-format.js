@@ -7,6 +7,10 @@ const welcomeMessage = `Welcome to the tiny song contraption, babe. 💅\n\nRigh
 
 const replacements = [
   [
+    `const SPOTIFY_SCOPE = "user-read-recently-played";`,
+    `const SPOTIFY_SCOPE = "user-read-recently-played user-read-currently-playing";`
+  ],
+  [
     "appleMusic: undefined,",
     "youtubeMusic: makeYoutubeMusicSearchUrl(track),"
   ],
@@ -74,6 +78,36 @@ function makeYoutubeMusicSearchUrl(track) {
   url.searchParams.set("q", query);
   return url.toString();
 }
+
+async function getCurrentTrack(telegramUserId) {
+  const token = await getValidSpotifyToken(telegramUserId);
+  const res = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
+    headers: { authorization: \`Bearer \${token.access_token}\` }
+  });
+
+  if (res.status === 204) return undefined;
+
+  if (res.status === 401) {
+    delete spotifyTokens[telegramUserId];
+    saveTokens();
+    throw new Error("Spotify token rejected");
+  }
+
+  if (!res.ok) throw new Error(\`Spotify currently playing failed: \${res.status}\`);
+
+  const data = await res.json();
+  if (data.item?.type !== "track") return undefined;
+
+  return {
+    spotifyId: data.item.id,
+    title: data.item.name,
+    artist: data.item.artists?.map((artist) => artist.name).join(", ") || "Unknown artist",
+    album: data.item.album?.name || "Unknown album",
+    artwork: data.item.album?.images?.at(-1)?.url || data.item.album?.images?.[0]?.url,
+    playedAt: new Date().toISOString(),
+    spotifyUrl: data.item.external_urls?.spotify
+  };
+}
 `;
 
 let changed = false;
@@ -97,6 +131,20 @@ if (!source.includes("function makeYoutubeMusicSearchUrl(track)")) {
   }
   source = source.replace(insertionPoint, `${helper}${insertionPoint}`);
   changed = true;
+}
+
+const currentTrackNeedle = "    tracks = await getRecentlyPlayed(telegramUserId);";
+const currentTrackReplacement = `    tracks = await getRecentlyPlayed(telegramUserId);
+    const currentTrack = await getCurrentTrack(telegramUserId);
+    if (currentTrack && tracks[0]?.spotifyId !== currentTrack.spotifyId) {
+      tracks = [currentTrack, ...tracks.filter((track) => track.spotifyId !== currentTrack.spotifyId)];
+    }`;
+
+if (source.includes(currentTrackNeedle)) {
+  source = source.replace(currentTrackNeedle, currentTrackReplacement);
+  changed = true;
+} else if (!source.includes("const currentTrack = await getCurrentTrack(telegramUserId);")) {
+  throw new Error("Could not insert currently playing lookup.");
 }
 
 if (changed) {
