@@ -3,6 +3,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 const indexPath = new URL("./index.js", import.meta.url);
 let source = readFileSync(indexPath, "utf8");
 
+const welcomeMessage = `Welcome to the tiny song contraption, babe. 💅\n\nRight now I only flirt with Spotify: connect your account, then summon me inline in any chat and pick a recent track. I’ll do the audio nonsense. 🪩\n\nTiny bureaucracy jumpscare: the Spotify app is still in development mode, so if login acts allergic to you, message @kyrylo0 first and I’ll add you to the whitelist. 🧾✨`;
+
 const replacements = [
   [
     "appleMusic: undefined,",
@@ -54,6 +56,10 @@ const replacements = [
         inline_keyboard: [[{ text: "Show recent Spotify songs", switch_inline_query_current_chat: "" }]]
       }`,
     ``
+  ],
+  [
+    `text: "Connect Spotify, then use me inline in any chat.",`,
+    `text: ${JSON.stringify(welcomeMessage)},`
   ]
 ];
 
