@@ -17,6 +17,13 @@ function replaceOnce(before, after, label) {
   changed = true;
 }
 
+function replaceIfPresent(before, after) {
+  if (source.includes(after)) return;
+  if (!source.includes(before)) return;
+  source = source.replace(before, after);
+  changed = true;
+}
+
 replaceOnce(
   'const SPOOTY_BASE_URL = process.env.SPOOTY_BASE_URL ? trimTrailingSlash(process.env.SPOOTY_BASE_URL) : "";',
   block([
@@ -66,7 +73,7 @@ replaceOnce(
     '      description: "Download this YouTube Music link",',
     '      thumbnail_url: track.artwork,',
     '      input_message_content: {',
-    '        message_text: `Preparing audio for:\\\\n${track.title}\\\\n${track.youtubeUrl}`',
+    '        message_text: `Preparing audio for:\\n${track.title}\\n${track.youtubeUrl}`',
     '      },',
     '      reply_markup: {',
     '        inline_keyboard: [[{ text: "Loading audio...", callback_data: "loading" }]]',
@@ -102,7 +109,7 @@ replaceOnce(
   "YouTube resolveAudio branch"
 );
 
-replaceOnce(
+replaceIfPresent(
   block([
     'async function downloadSpootyYoutubeAudio(youtubeTrack) {',
     '  if (!SPOOTY_YOUTUBE_BASE_URL) {',
@@ -158,8 +165,7 @@ replaceOnce(
     '  await pipeline(Readable.fromWeb(res.body), createWriteStream(filePath));',
     '  return buildLocalAudioResult(youtubeTrack, fileName, "YouTube Music audio.");',
     '}'
-  ]),
-  "YouTube downloader retry update"
+  ])
 );
 
 replaceOnce(
@@ -238,7 +244,7 @@ replaceOnce(
     '    title: spotifyTrack.title,',
     '    performer: spotifyTrack.artist,',
     '    durationSeconds: undefined,',
-    '    url: `${PUBLIC_BASE_URL}/files/${encodeURIComponent(fileName)}`,' ,
+    '    url: `${PUBLIC_BASE_URL}/files/${encodeURIComponent(fileName)}`,',
     '    credit: "Spooty audio."',
     '  };',
     '}'
@@ -249,7 +255,7 @@ replaceOnce(
     '    title: spotifyTrack.title,',
     '    performer: spotifyTrack.artist,',
     '    durationSeconds: undefined,',
-    '    url: `${PUBLIC_BASE_URL}/files/${encodeURIComponent(fileName)}`,' ,
+    '    url: `${PUBLIC_BASE_URL}/files/${encodeURIComponent(fileName)}`,',
     '    credit',
     '  };',
     '}'
@@ -339,7 +345,7 @@ replaceOnce(
   "YouTube URL helpers"
 );
 
-replaceOnce(
+replaceIfPresent(
   block([
     'function deriveSpootyYoutubeBaseUrl(spootyBaseUrl) {',
     '  if (!spootyBaseUrl) return "";',
@@ -365,8 +371,7 @@ replaceOnce(
     '    return "";',
     '  }',
     '}'
-  ]),
-  "Spooty YouTube sidecar derived port update"
+  ])
 );
 
 replaceOnce(
