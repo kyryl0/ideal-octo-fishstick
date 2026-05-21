@@ -22,4 +22,5 @@ else
   echo "YouTube cookies file not found or empty at $COOKIE_FILE"
 fi
 
+node /spooty/youtube-direct-server.cjs &
 exec node backend/main.js
