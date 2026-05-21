@@ -66,7 +66,7 @@ replaceOnce(
     '      description: "Download this YouTube Music link",',
     '      thumbnail_url: track.artwork,',
     '      input_message_content: {',
-    '        message_text: `Preparing audio for:\\n${track.title}\\n${track.youtubeUrl}`',
+    '        message_text: `Preparing audio for:\\\\n${track.title}\\\\n${track.youtubeUrl}`',
     '      },',
     '      reply_markup: {',
     '        inline_keyboard: [[{ text: "Loading audio...", callback_data: "loading" }]]',
@@ -103,7 +103,6 @@ replaceOnce(
 );
 
 replaceOnce(
-  'async function downloadSpootyAudio(spotifyTrack) {',
   block([
     'async function downloadSpootyYoutubeAudio(youtubeTrack) {',
     '  if (!SPOOTY_YOUTUBE_BASE_URL) {',
@@ -137,11 +136,99 @@ replaceOnce(
     '',
     '  await pipeline(Readable.fromWeb(res.body), createWriteStream(filePath));',
     '  return buildLocalAudioResult(youtubeTrack, fileName, "YouTube Music audio.");',
+    '}'
+  ]),
+  block([
+    'async function downloadSpootyYoutubeAudio(youtubeTrack) {',
+    '  const fileBase = safeSegment(youtubeTrack.youtubeId || createHash("sha256").update(youtubeTrack.youtubeUrl).digest("hex"));',
+    '  const cachedFileName = findCachedAudioFile(fileBase);',
+    '',
+    '  if (cachedFileName) {',
+    '    return buildLocalAudioResult(youtubeTrack, cachedFileName, "YouTube Music audio.");',
+    '  }',
+    '',
+    '  const fileName = `${fileBase}.${SPOOTY_AUDIO_EXTENSION}`;',
+    '  const filePath = join(AUDIO_DIR, fileName);',
+    '  const res = await fetchSpootyYoutubeDownload(youtubeTrack.youtubeUrl);',
+    '',
+    '  if (!res.body) {',
+    '    throw new Error("YouTube download response did not include a body.");',
+    '  }',
+    '',
+    '  await pipeline(Readable.fromWeb(res.body), createWriteStream(filePath));',
+    '  return buildLocalAudioResult(youtubeTrack, fileName, "YouTube Music audio.");',
+    '}'
+  ]),
+  "YouTube downloader retry update"
+);
+
+replaceOnce(
+  'async function downloadSpootyAudio(spotifyTrack) {',
+  block([
+    'async function downloadSpootyYoutubeAudio(youtubeTrack) {',
+    '  const fileBase = safeSegment(youtubeTrack.youtubeId || createHash("sha256").update(youtubeTrack.youtubeUrl).digest("hex"));',
+    '  const cachedFileName = findCachedAudioFile(fileBase);',
+    '',
+    '  if (cachedFileName) {',
+    '    return buildLocalAudioResult(youtubeTrack, cachedFileName, "YouTube Music audio.");',
+    '  }',
+    '',
+    '  const fileName = `${fileBase}.${SPOOTY_AUDIO_EXTENSION}`;',
+    '  const filePath = join(AUDIO_DIR, fileName);',
+    '  const res = await fetchSpootyYoutubeDownload(youtubeTrack.youtubeUrl);',
+    '',
+    '  if (!res.body) {',
+    '    throw new Error("YouTube download response did not include a body.");',
+    '  }',
+    '',
+    '  await pipeline(Readable.fromWeb(res.body), createWriteStream(filePath));',
+    '  return buildLocalAudioResult(youtubeTrack, fileName, "YouTube Music audio.");',
     '}',
     '',
     'async function downloadSpootyAudio(spotifyTrack) {'
   ]),
   "YouTube downloader function"
+);
+
+replaceOnce(
+  'async function downloadSpootyAudio(spotifyTrack) {',
+  block([
+    'async function fetchSpootyYoutubeDownload(youtubeUrl) {',
+    '  const bases = [',
+    '    SPOOTY_YOUTUBE_BASE_URL,',
+    '    deriveSpootyYoutubeBaseUrl(SPOOTY_YOUTUBE_BASE_URL),',
+    '    deriveSpootyYoutubeBaseUrl(SPOOTY_BASE_URL)',
+    '  ].filter(Boolean);',
+    '  const uniqueBases = [...new Set(bases)];',
+    '',
+    '  if (!uniqueBases.length) {',
+    '    throw new Error("YouTube links require SPOOTY_YOUTUBE_BASE_URL or a SPOOTY_BASE_URL on port 3000.");',
+    '  }',
+    '',
+    '  let lastError = "";',
+    '',
+    '  for (const base of uniqueBases) {',
+    '    const downloadUrl = new URL("/api/youtube/download", base);',
+    '    const res = await fetch(downloadUrl, {',
+    '      method: "POST",',
+    '      headers: { "content-type": "application/json" },',
+    '      body: JSON.stringify({ url: youtubeUrl, format: SPOOTY_AUDIO_EXTENSION })',
+    '    });',
+    '',
+    '    if (res.ok) return res;',
+    '',
+    '    const errorText = await res.text().catch(() => "");',
+    '    lastError = `${downloadUrl.toString()} -> ${res.status}${errorText ? ` ${errorText.slice(0, 120)}` : ""}`;',
+    '',
+    '    if (res.status !== 404) break;',
+    '  }',
+    '',
+    '  throw new Error(`YouTube download failed: ${lastError}`);',
+    '}',
+    '',
+    'async function downloadSpootyAudio(spotifyTrack) {'
+  ]),
+  "YouTube sidecar fetch retry helper"
 );
 
 replaceOnce(
@@ -151,7 +238,7 @@ replaceOnce(
     '    title: spotifyTrack.title,',
     '    performer: spotifyTrack.artist,',
     '    durationSeconds: undefined,',
-    '    url: `${PUBLIC_BASE_URL}/files/${encodeURIComponent(fileName)}`,',
+    '    url: `${PUBLIC_BASE_URL}/files/${encodeURIComponent(fileName)}`,' ,
     '    credit: "Spooty audio."',
     '  };',
     '}'
@@ -162,7 +249,7 @@ replaceOnce(
     '    title: spotifyTrack.title,',
     '    performer: spotifyTrack.artist,',
     '    durationSeconds: undefined,',
-    '    url: `${PUBLIC_BASE_URL}/files/${encodeURIComponent(fileName)}`,',
+    '    url: `${PUBLIC_BASE_URL}/files/${encodeURIComponent(fileName)}`,' ,
     '    credit',
     '  };',
     '}'
