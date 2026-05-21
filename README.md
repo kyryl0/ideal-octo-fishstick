@@ -9,7 +9,7 @@ This is a working inline-mode Telegram bot skeleton for the flow:
 5. Telegram sends a small placeholder message immediately.
 6. Bot edits that inline message into an audio message.
 
-With `AUDIO_PROVIDER=spooty`, the final audio comes from a self-hosted Spooty instance. The bot asks Spooty to download the selected Spotify track, then serves the finished audio back to Telegram.
+With `AUDIO_PROVIDER=spooty`, the final audio comes from a self-hosted Spooty instance. The bot asks Spooty to download the selected Spotify track, then serves the finished audio back to Telegram. It also supports pasted YouTube / YouTube Music links directly in inline mode.
 
 ## Why this shape
 
@@ -38,19 +38,16 @@ Do not set `PORT` or `APP_PORT`; Railway provides `PORT` and the app reads it au
 /railway-spooty
 ```
 
-This service uses `railway-spooty/Dockerfile`, which wraps `raiper34/spooty:latest` and installs the runtime dependencies Spooty still needs in the Railway image: SQLite support and a `yt-dlp` executable at `/usr/local/bin/yt-dlp`. The wrapper also patches Spooty to pass that exact binary path into `ytdlp-nodejs`.
+This service uses `railway-spooty/Dockerfile`, which wraps `raiper34/spooty:latest`, installs SQLite support and `yt-dlp`, patches Spooty's YouTube service, and starts a small sidecar on port `3001` for direct YouTube / YouTube Music links.
 
-Name the service `spooty` if possible. With that service name, the bot uses this internal Railway address:
-
-```text
-http://spooty.railway.internal:3000
-```
-
-If you use another service name or a public Spooty domain, set this bot variable:
+Name the service `spooty` if possible. With that service name, the bot uses these internal Railway addresses:
 
 ```text
-SPOOTY_BASE_URL=https://your-spooty-service.up.railway.app
+SPOOTY_BASE_URL=http://spooty.railway.internal:3000
+SPOOTY_YOUTUBE_BASE_URL=http://spooty.railway.internal:3001
 ```
+
+If you use another service name or public Spooty domains, set those bot variables explicitly.
 
 5. In the Spooty service variables, add:
 
@@ -84,12 +81,15 @@ Enable Spooty on the bot with these variables:
 ```text
 AUDIO_PROVIDER=spooty
 SPOOTY_BASE_URL=http://spooty.railway.internal:3000
+SPOOTY_YOUTUBE_BASE_URL=http://spooty.railway.internal:3001
 SPOOTY_AUDIO_EXTENSION=mp3
 ```
 
 Spooty is a separate self-hosted service, not an npm package. Configure it with its own Spotify client ID/secret and YouTube cookie settings as described in [Raiper34/spooty](https://github.com/Raiper34/spooty).
 
-The bot calls Spooty's `/api/playlist` endpoint with the selected Spotify URL, waits for the created track to reach `Completed`, downloads it from `/api/track/download/:id`, saves it under `data/audio`, exposes it at `/files/...`, and passes that public URL to Telegram for the inline message edit.
+For Spotify inline results, the bot calls Spooty's `/api/playlist` endpoint with the selected Spotify URL, waits for the created track to reach `Completed`, downloads it from `/api/track/download/:id`, saves it under `data/audio`, exposes it at `/files/...`, and passes that public URL to Telegram.
+
+For pasted YouTube / YouTube Music links, the bot returns a direct inline result without requiring Spotify login. When selected, it calls the Spooty wrapper sidecar at `/api/youtube/download`, saves the returned audio under `data/audio`, exposes it at `/files/...`, and edits the Telegram message the same way.
 
 Optional tuning:
 
@@ -107,7 +107,7 @@ Create an app in the Spotify Developer Dashboard:
 
 1. Add this redirect URI: `https://your-service.up.railway.app/spotify/callback`
 2. Copy the client ID and client secret into Railway variables, or into `.env` for local development.
-3. The bot requests only this scope: `user-read-recently-played`.
+3. The bot requests `user-read-recently-played` and `user-read-currently-playing`.
 
 ## BotFather setup
 
@@ -129,7 +129,7 @@ npm start
 
 `PUBLIC_BASE_URL` must be public HTTPS and point to this app's `PORT`. For local testing, use a tunnel such as Cloudflare Tunnel or ngrok.
 
-Open a private chat with the bot and send `/start`, then use the Spotify login link. After login, type `@your_bot` in any chat to see recent tracks.
+Open a private chat with the bot and send `/start`, then use the Spotify login link. After login, type `@your_bot` in any chat to see recent tracks. You can also paste a YouTube Music link after `@your_bot` inline.
 
 ## Notes
 
