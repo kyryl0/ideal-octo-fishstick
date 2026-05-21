@@ -253,7 +253,6 @@ replaceOnce(
 );
 
 replaceOnce(
-  'function trimTrailingSlash(value) {',
   block([
     'function deriveSpootyYoutubeBaseUrl(spootyBaseUrl) {',
     '  if (!spootyBaseUrl) return "";',
@@ -261,6 +260,37 @@ replaceOnce(
     '  try {',
     '    const url = new URL(spootyBaseUrl);',
     '    if (url.port === "3000") url.port = "3001";',
+    '    return trimTrailingSlash(url.toString());',
+    '  } catch {',
+    '    return "";',
+    '  }',
+    '}'
+  ]),
+  block([
+    'function deriveSpootyYoutubeBaseUrl(spootyBaseUrl) {',
+    '  if (!spootyBaseUrl) return "";',
+    '',
+    '  try {',
+    '    const url = new URL(spootyBaseUrl);',
+    '    if (url.protocol === "http:" && (!url.port || url.port === "3000")) url.port = "3001";',
+    '    return trimTrailingSlash(url.toString());',
+    '  } catch {',
+    '    return "";',
+    '  }',
+    '}'
+  ]),
+  "Spooty YouTube sidecar derived port update"
+);
+
+replaceOnce(
+  'function trimTrailingSlash(value) {',
+  block([
+    'function deriveSpootyYoutubeBaseUrl(spootyBaseUrl) {',
+    '  if (!spootyBaseUrl) return "";',
+    '',
+    '  try {',
+    '    const url = new URL(spootyBaseUrl);',
+    '    if (url.protocol === "http:" && (!url.port || url.port === "3000")) url.port = "3001";',
     '    return trimTrailingSlash(url.toString());',
     '  } catch {',
     '    return "";',
