@@ -8,6 +8,7 @@ ENV YT_COOKIES_FILE=/spooty/config/cookies.txt
 
 COPY start-spooty.sh /spooty/start-spooty.sh
 COPY patch-spooty.cjs /spooty/patch-spooty.cjs
+COPY youtube-direct-server.cjs /spooty/youtube-direct-server.cjs
 
 RUN apk add --no-cache make g++ python3 py3-pip \
   && python3 -m pip install --break-system-packages --no-cache-dir "yt-dlp[default]" \
