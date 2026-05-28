@@ -3,7 +3,7 @@ FROM node:20.20.0-alpine AS builder
 WORKDIR /spooty
 
 RUN apk add --no-cache ca-certificates wget tar \
-  && wget -O /tmp/spooty.tar.gz https://github.com/Raiper34/spooty/archive/refs/heads/main.tar.gz \
+  && wget -O /tmp/spooty.tar.gz https://github.com/TorMatzAndren/jarri-spooty/archive/refs/heads/main.tar.gz \
   && tar -xzf /tmp/spooty.tar.gz --strip-components=1 -C . \
   && rm /tmp/spooty.tar.gz \
   && npm ci \
