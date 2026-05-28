@@ -24,7 +24,7 @@ COPY start-spooty.sh /spooty/start-spooty.sh
 COPY patch-spooty.cjs /spooty/patch-spooty.cjs
 
 RUN apk add --no-cache make g++ python3 py3-pip ffmpeg redis \
-  && npm prune --production \
+  && npm ci --omit=dev \
   && npm install sqlite3@5.1.7 --save \
   && node -e "require('sqlite3'); console.log('sqlite3 runtime dependency is installed')" \
   && rm -rf src package.json package-lock.json \
