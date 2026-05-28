@@ -25,6 +25,8 @@ COPY patch-spooty.cjs /spooty/patch-spooty.cjs
 
 RUN apk add --no-cache make g++ python3 py3-pip ffmpeg redis \
   && npm prune --production \
+  && npm install sqlite3@5.1.7 --save \
+  && node -e "require('sqlite3'); console.log('sqlite3 runtime dependency is installed')" \
   && rm -rf src package.json package-lock.json \
   && python3 -m pip install --break-system-packages --no-cache-dir "yt-dlp[default]" \
   && yt-dlp --version \
@@ -40,8 +42,6 @@ RUN apk add --no-cache make g++ python3 py3-pip ffmpeg redis \
   && grep -F "createYoutubeTrack" backend/playlist/playlist.service.js \
   && grep -F "savedTrack.youtubeUrl" backend/track/track.service.js \
   && node -e "const { YtDlp } = require('ytdlp-nodejs'); new YtDlp({ binaryPath: process.env.YTDLP_BINARY_PATH }); console.log('yt-dlp runtime path is usable')" \
-  && npm install sqlite3@5.1.7 --save \
-  && node -e "require('sqlite3'); console.log('sqlite3 runtime dependency is installed')" \
   && npm cache clean --force
 
 EXPOSE 3000
