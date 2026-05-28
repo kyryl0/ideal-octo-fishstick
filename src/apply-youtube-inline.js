@@ -4,10 +4,6 @@ const indexPath = new URL("./index.js", import.meta.url);
 let source = readFileSync(indexPath, "utf8");
 let changed = false;
 
-function block(lines) {
-  return lines.join("\n");
-}
-
 function replaceOnce(before, after, label) {
   if (source.includes(after)) return;
   if (!source.includes(before)) {
@@ -17,382 +13,135 @@ function replaceOnce(before, after, label) {
   changed = true;
 }
 
-function replaceIfPresent(before, after) {
-  if (source.includes(after)) return;
-  if (!source.includes(before)) return;
-  source = source.replace(before, after);
-  changed = true;
+replaceOnce(
+  `async function handleInlineQuery(query) {\n  const telegramUserId = String(query.from.id);\n\n  if (!spotifyTokens[telegramUserId]) {`,
+  `async function handleInlineQuery(query) {\n  const telegramUserId = String(query.from.id);\n  const youtubeTrack = await getYoutubeInlineTrack(query.query);\n\n  if (youtubeTrack) {\n    await answerWithYoutubeResult(query.id, telegramUserId, youtubeTrack);\n    return;\n  }\n\n  if (!spotifyTokens[telegramUserId]) {`,
+  "inline YouTube branch"
+);
+
+replaceOnce(
+  `async function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {`,
+  `async function answerWithYoutubeResult(inlineQueryId, telegramUserId, track) {\n  const resultId = makeYoutubeResultId(telegramUserId, track);\n  chosenTracks.set(resultId, track);\n\n  await telegram("answerInlineQuery", {\n    inline_query_id: inlineQueryId,\n    results: [{\n      type: "article",\n      id: resultId,\n      title: track.title,\n      description: "YouTube link - tap to fetch audio",\n      thumbnail_url: track.artwork,\n      input_message_content: {\n        message_text: \`Preparing audio for:\\n\${track.title}\\n\${track.artist}\`\n      },\n      reply_markup: {\n        inline_keyboard: [[{ text: "Loading... 😵‍💫", callback_data: "loading" }]]\n      }\n    }],\n    cache_time: 0,\n    is_personal: true\n  });\n}\n\nasync function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {`,
+  "YouTube inline result helper"
+);
+
+replaceOnce(
+  `  if (!spotifyTrack.spotifyUrl) {\n    throw new Error("Spotify track URL is missing.");\n  }\n\n  const fileBase = safeSegment(spotifyTrack.spotifyId || createHash("sha256").update(spotifyTrack.spotifyUrl).digest("hex"));`,
+  `  const sourceUrl = spotifyTrack.youtubeUrl || spotifyTrack.spotifyUrl;\n\n  if (!sourceUrl) {\n    throw new Error("Track URL is missing.");\n  }\n\n  const fileBase = safeSegment(spotifyTrack.spotifyId || spotifyTrack.youtubeId || createHash("sha256").update(sourceUrl).digest("hex"));`,
+  "Spooty source URL selection"
+);
+
+replaceOnce(
+  `  const spootyTrack = await createAndWaitForSpootyTrack(spotifyTrack.spotifyUrl);`,
+  `  const spootyTrack = await createAndWaitForSpootyTrack(sourceUrl, spotifyTrack);`,
+  "Spooty direct URL create call"
+);
+
+replaceOnce(
+  `async function createAndWaitForSpootyTrack(spotifyUrl) {\n  const createUrl = new URL("/api/playlist", SPOOTY_BASE_URL);\n  const createRes = await fetch(createUrl, {\n    method: "POST",\n    headers: { "content-type": "application/json" },\n    body: JSON.stringify({ spotifyUrl, active: false })\n  });`,
+  `async function createAndWaitForSpootyTrack(spotifyUrl, sourceTrack = {}) {\n  const createUrl = new URL("/api/playlist", SPOOTY_BASE_URL);\n  const createRes = await fetch(createUrl, {\n    method: "POST",\n    headers: { "content-type": "application/json" },\n    body: JSON.stringify({ spotifyUrl, name: sourceTrack.title, active: false })\n  });`,
+  "Spooty create metadata"
+);
+
+replaceOnce(
+  `async function resolveSongLinks(track) {\n  const fallbackOther = track.spotifyId ? \`https://song.link/s/\${track.spotifyId}\` : track.spotifyUrl;`,
+  `async function resolveSongLinks(track) {\n  if (track.youtubeUrl) {\n    return {\n      spotify: undefined,\n      youtubeMusic: track.youtubeUrl,\n      other: track.youtubeUrl\n    };\n  }\n\n  const fallbackOther = track.spotifyId ? \`https://song.link/s/\${track.spotifyId}\` : track.spotifyUrl;`,
+  "YouTube song links"
+);
+
+const helper = `
+async function getYoutubeInlineTrack(queryText) {
+  const youtubeUrl = extractYoutubeUrl(queryText);
+  if (!youtubeUrl) return undefined;
+
+  const youtubeId = getYoutubeVideoId(youtubeUrl);
+  const normalizedUrl = youtubeId ? \`https://www.youtube.com/watch?v=\${youtubeId}\` : youtubeUrl;
+  const title = await getYoutubeTitle(normalizedUrl);
+
+  return {
+    source: "youtube",
+    youtubeId,
+    youtubeUrl: normalizedUrl,
+    spotifyId: youtubeId,
+    title,
+    artist: "YouTube",
+    album: "Direct link",
+    artwork: youtubeId ? \`https://img.youtube.com/vi/\${youtubeId}/mqdefault.jpg\` : undefined,
+    playedAt: new Date().toISOString(),
+    spotifyUrl: undefined
+  };
 }
 
-replaceOnce(
-  'const SPOOTY_BASE_URL = process.env.SPOOTY_BASE_URL ? trimTrailingSlash(process.env.SPOOTY_BASE_URL) : "";',
-  block([
-    'const SPOOTY_BASE_URL = process.env.SPOOTY_BASE_URL ? trimTrailingSlash(process.env.SPOOTY_BASE_URL) : "";',
-    'const SPOOTY_YOUTUBE_BASE_URL = process.env.SPOOTY_YOUTUBE_BASE_URL',
-    '  ? trimTrailingSlash(process.env.SPOOTY_YOUTUBE_BASE_URL)',
-    '  : deriveSpootyYoutubeBaseUrl(SPOOTY_BASE_URL);'
-  ]),
-  "SPOOTY_YOUTUBE_BASE_URL config"
-);
+function makeYoutubeResultId(telegramUserId, track) {
+  const raw = [telegramUserId, track.youtubeId || track.youtubeUrl, track.title].join(":");
+  return "yt:" + createHash("sha256").update(raw).digest("base64url").slice(0, 32);
+}
 
-replaceOnce(
-  block([
-    'async function handleInlineQuery(query) {',
-    '  const telegramUserId = String(query.from.id);',
-    '',
-    '  if (!spotifyTokens[telegramUserId]) {'
-  ]),
-  block([
-    'async function handleInlineQuery(query) {',
-    '  const telegramUserId = String(query.from.id);',
-    '  const youtubeTrack = makeYoutubeTrackFromInlineQuery(query.query);',
-    '',
-    '  if (youtubeTrack) {',
-    '    await answerWithYoutubeResult(query.id, youtubeTrack);',
-    '    return;',
-    '  }',
-    '',
-    '  if (!spotifyTokens[telegramUserId]) {'
-  ]),
-  "inline YouTube query branch"
-);
+function extractYoutubeUrl(queryText) {
+  const text = String(queryText || "").trim();
+  if (!text) return undefined;
 
-replaceOnce(
-  'async function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {',
-  block([
-    'async function answerWithYoutubeResult(inlineQueryId, track) {',
-    '  const resultId = makeYoutubeResultId(track.youtubeUrl);',
-    '  chosenTracks.set(resultId, track);',
-    '',
-    '  await telegram("answerInlineQuery", {',
-    '    inline_query_id: inlineQueryId,',
-    '    results: [{',
-    '      type: "article",',
-    '      id: resultId,',
-    '      title: track.title,',
-    '      description: "Download this YouTube Music link",',
-    '      thumbnail_url: track.artwork,',
-    '      input_message_content: {',
-    '        message_text: `Preparing audio for:\\n${track.title}\\n${track.youtubeUrl}`',
-    '      },',
-    '      reply_markup: {',
-    '        inline_keyboard: [[{ text: "Loading audio...", callback_data: "loading" }]]',
-    '      }',
-    '    }],',
-    '    cache_time: 0,',
-    '    is_personal: true',
-    '  });',
-    '}',
-    '',
-    'async function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {'
-  ]),
-  "YouTube inline answer function"
-);
+  const match = text.match(/(?:https?:\\/\\/)?(?:www\\.|m\\.)?(?:youtube\\.com|music\\.youtube\\.com|youtu\\.be)\\/[^\\s<>]+/i);
+  if (!match) return undefined;
 
-replaceOnce(
-  block([
-    'async function resolveAudio(spotifyTrack) {',
-    '  if (AUDIO_PROVIDER === "spooty") {',
-    '    return downloadSpootyAudio(spotifyTrack);',
-    '  }'
-  ]),
-  block([
-    'async function resolveAudio(spotifyTrack) {',
-    '  if (AUDIO_PROVIDER === "spooty" && spotifyTrack.youtubeUrl) {',
-    '    return downloadSpootyYoutubeAudio(spotifyTrack);',
-    '  }',
-    '',
-    '  if (AUDIO_PROVIDER === "spooty") {',
-    '    return downloadSpootyAudio(spotifyTrack);',
-    '  }'
-  ]),
-  "YouTube resolveAudio branch"
-);
+  const raw = match[0].startsWith("http") ? match[0] : \`https://\${match[0]}\`;
+  try {
+    const url = new URL(raw);
+    if (!isYoutubeHost(url.hostname)) return undefined;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
 
-replaceIfPresent(
-  block([
-    'async function downloadSpootyYoutubeAudio(youtubeTrack) {',
-    '  if (!SPOOTY_YOUTUBE_BASE_URL) {',
-    '    throw new Error("YouTube links require SPOOTY_YOUTUBE_BASE_URL or a SPOOTY_BASE_URL on port 3000.");',
-    '  }',
-    '',
-    '  const fileBase = safeSegment(youtubeTrack.youtubeId || createHash("sha256").update(youtubeTrack.youtubeUrl).digest("hex"));',
-    '  const cachedFileName = findCachedAudioFile(fileBase);',
-    '',
-    '  if (cachedFileName) {',
-    '    return buildLocalAudioResult(youtubeTrack, cachedFileName, "YouTube Music audio.");',
-    '  }',
-    '',
-    '  const fileName = `${fileBase}.${SPOOTY_AUDIO_EXTENSION}`;',
-    '  const filePath = join(AUDIO_DIR, fileName);',
-    '  const downloadUrl = new URL("/api/youtube/download", SPOOTY_YOUTUBE_BASE_URL);',
-    '  const res = await fetch(downloadUrl, {',
-    '    method: "POST",',
-    '    headers: { "content-type": "application/json" },',
-    '    body: JSON.stringify({ url: youtubeTrack.youtubeUrl, format: SPOOTY_AUDIO_EXTENSION })',
-    '  });',
-    '',
-    '  if (!res.ok) {',
-    '    const errorText = await res.text().catch(() => "");',
-    '    throw new Error(`YouTube download failed: ${res.status}${errorText ? ` ${errorText.slice(0, 120)}` : ""}`);',
-    '  }',
-    '',
-    '  if (!res.body) {',
-    '    throw new Error("YouTube download response did not include a body.");',
-    '  }',
-    '',
-    '  await pipeline(Readable.fromWeb(res.body), createWriteStream(filePath));',
-    '  return buildLocalAudioResult(youtubeTrack, fileName, "YouTube Music audio.");',
-    '}'
-  ]),
-  block([
-    'async function downloadSpootyYoutubeAudio(youtubeTrack) {',
-    '  const fileBase = safeSegment(youtubeTrack.youtubeId || createHash("sha256").update(youtubeTrack.youtubeUrl).digest("hex"));',
-    '  const cachedFileName = findCachedAudioFile(fileBase);',
-    '',
-    '  if (cachedFileName) {',
-    '    return buildLocalAudioResult(youtubeTrack, cachedFileName, "YouTube Music audio.");',
-    '  }',
-    '',
-    '  const fileName = `${fileBase}.${SPOOTY_AUDIO_EXTENSION}`;',
-    '  const filePath = join(AUDIO_DIR, fileName);',
-    '  const res = await fetchSpootyYoutubeDownload(youtubeTrack.youtubeUrl);',
-    '',
-    '  if (!res.body) {',
-    '    throw new Error("YouTube download response did not include a body.");',
-    '  }',
-    '',
-    '  await pipeline(Readable.fromWeb(res.body), createWriteStream(filePath));',
-    '  return buildLocalAudioResult(youtubeTrack, fileName, "YouTube Music audio.");',
-    '}'
-  ])
-);
+function isYoutubeHost(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  return host === "youtu.be" || host === "youtube.com" || host.endsWith(".youtube.com");
+}
 
-replaceOnce(
-  'async function downloadSpootyAudio(spotifyTrack) {',
-  block([
-    'async function downloadSpootyYoutubeAudio(youtubeTrack) {',
-    '  const fileBase = safeSegment(youtubeTrack.youtubeId || createHash("sha256").update(youtubeTrack.youtubeUrl).digest("hex"));',
-    '  const cachedFileName = findCachedAudioFile(fileBase);',
-    '',
-    '  if (cachedFileName) {',
-    '    return buildLocalAudioResult(youtubeTrack, cachedFileName, "YouTube Music audio.");',
-    '  }',
-    '',
-    '  const fileName = `${fileBase}.${SPOOTY_AUDIO_EXTENSION}`;',
-    '  const filePath = join(AUDIO_DIR, fileName);',
-    '  const res = await fetchSpootyYoutubeDownload(youtubeTrack.youtubeUrl);',
-    '',
-    '  if (!res.body) {',
-    '    throw new Error("YouTube download response did not include a body.");',
-    '  }',
-    '',
-    '  await pipeline(Readable.fromWeb(res.body), createWriteStream(filePath));',
-    '  return buildLocalAudioResult(youtubeTrack, fileName, "YouTube Music audio.");',
-    '}',
-    '',
-    'async function downloadSpootyAudio(spotifyTrack) {'
-  ]),
-  "YouTube downloader function"
-);
+function getYoutubeVideoId(youtubeUrl) {
+  try {
+    const url = new URL(youtubeUrl);
+    if (url.hostname.toLowerCase() === "youtu.be") {
+      return url.pathname.split("/").filter(Boolean)[0];
+    }
+    if (url.pathname === "/watch") {
+      return url.searchParams.get("v") || undefined;
+    }
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (["shorts", "embed", "live"].includes(parts[0])) return parts[1];
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
 
-replaceOnce(
-  'async function downloadSpootyAudio(spotifyTrack) {',
-  block([
-    'async function fetchSpootyYoutubeDownload(youtubeUrl) {',
-    '  const bases = [',
-    '    SPOOTY_YOUTUBE_BASE_URL,',
-    '    deriveSpootyYoutubeBaseUrl(SPOOTY_YOUTUBE_BASE_URL),',
-    '    deriveSpootyYoutubeBaseUrl(SPOOTY_BASE_URL)',
-    '  ].filter(Boolean);',
-    '  const uniqueBases = [...new Set(bases)];',
-    '',
-    '  if (!uniqueBases.length) {',
-    '    throw new Error("YouTube links require SPOOTY_YOUTUBE_BASE_URL or a SPOOTY_BASE_URL on port 3000.");',
-    '  }',
-    '',
-    '  let lastError = "";',
-    '',
-    '  for (const base of uniqueBases) {',
-    '    const downloadUrl = new URL("/api/youtube/download", base);',
-    '    const res = await fetch(downloadUrl, {',
-    '      method: "POST",',
-    '      headers: { "content-type": "application/json" },',
-    '      body: JSON.stringify({ url: youtubeUrl, format: SPOOTY_AUDIO_EXTENSION })',
-    '    });',
-    '',
-    '    if (res.ok) return res;',
-    '',
-    '    const errorText = await res.text().catch(() => "");',
-    '    lastError = `${downloadUrl.toString()} -> ${res.status}${errorText ? ` ${errorText.slice(0, 120)}` : ""}`;',
-    '',
-    '    if (res.status !== 404) break;',
-    '  }',
-    '',
-    '  throw new Error(`YouTube download failed: ${lastError}`);',
-    '}',
-    '',
-    'async function downloadSpootyAudio(spotifyTrack) {'
-  ]),
-  "YouTube sidecar fetch retry helper"
-);
+async function getYoutubeTitle(youtubeUrl) {
+  try {
+    const url = new URL("https://www.youtube.com/oembed");
+    url.searchParams.set("url", youtubeUrl);
+    url.searchParams.set("format", "json");
 
-replaceOnce(
-  block([
-    'function buildLocalAudioResult(spotifyTrack, fileName) {',
-    '  return {',
-    '    title: spotifyTrack.title,',
-    '    performer: spotifyTrack.artist,',
-    '    durationSeconds: undefined,',
-    '    url: `${PUBLIC_BASE_URL}/files/${encodeURIComponent(fileName)}`,',
-    '    credit: "Spooty audio."',
-    '  };',
-    '}'
-  ]),
-  block([
-    'function buildLocalAudioResult(spotifyTrack, fileName, credit = "Spooty audio.") {',
-    '  return {',
-    '    title: spotifyTrack.title,',
-    '    performer: spotifyTrack.artist,',
-    '    durationSeconds: undefined,',
-    '    url: `${PUBLIC_BASE_URL}/files/${encodeURIComponent(fileName)}`,',
-    '    credit',
-    '  };',
-    '}'
-  ]),
-  "buildLocalAudioResult credit parameter"
-);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(\`YouTube oEmbed failed: \${res.status}\`);
 
-replaceOnce(
-  '  const fallbackOther = track.spotifyId ? ',
-  '  const fallbackOther = track.youtubeUrl || (track.spotifyId ? ',
-  "song.link fallback YouTube URL start"
-);
+    const data = await res.json();
+    return data.title || "YouTube audio";
+  } catch (err) {
+    console.error("YouTube title lookup failed:", err);
+    return "YouTube audio";
+  }
+}
+`;
 
-replaceOnce(
-  ' : track.spotifyUrl;\n  const fallback = {',
-  ' : track.spotifyUrl);\n  const fallback = {',
-  "song.link fallback YouTube URL end"
-);
-
-replaceOnce(
-  'spotify: track.spotifyUrl,\n    youtubeMusic: makeYoutubeMusicSearchUrl(track),',
-  'spotify: track.spotifyUrl,\n    youtubeMusic: track.youtubeUrl || makeYoutubeMusicSearchUrl(track),',
-  "YouTube direct fallback link"
-);
-
-replaceOnce(
-  'function makeYoutubeMusicSearchUrl(track) {',
-  block([
-    'function makeYoutubeTrackFromInlineQuery(query) {',
-    '  const youtubeUrl = extractYoutubeUrl(query);',
-    '  if (!youtubeUrl) return undefined;',
-    '',
-    '  const youtubeId = extractYoutubeVideoId(youtubeUrl);',
-    '  return {',
-    '    source: "youtube",',
-    '    youtubeUrl,',
-    '    youtubeId,',
-    '    spotifyId: youtubeId || createHash("sha256").update(youtubeUrl).digest("hex").slice(0, 16),',
-    '    title: "YouTube Music link",',
-    '    artist: "",',
-    '    album: "Pasted inline",',
-    '    artwork: youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg` : undefined,',
-    '    playedAt: new Date().toISOString()',
-    '  };',
-    '}',
-    '',
-    'function extractYoutubeUrl(query) {',
-    '  if (!query) return undefined;',
-    '',
-    '  const match = String(query).match(/https?:\\/\\/[^\\s<>]+/i);',
-    '  if (!match) return undefined;',
-    '',
-    '  try {',
-    '    const url = new URL(match[0]);',
-    '    const host = url.hostname.replace(/^www\\./, "").toLowerCase();',
-    '    const allowedHosts = new Set(["youtube.com", "music.youtube.com", "m.youtube.com", "youtu.be"]);',
-    '',
-    '    if (!allowedHosts.has(host)) return undefined;',
-    '    url.hash = "";',
-    '    return url.toString();',
-    '  } catch {',
-    '    return undefined;',
-    '  }',
-    '}',
-    '',
-    'function extractYoutubeVideoId(value) {',
-    '  try {',
-    '    const url = new URL(value);',
-    '    const host = url.hostname.replace(/^www\\./, "").toLowerCase();',
-    '',
-    '    if (host === "youtu.be") {',
-    '      return url.pathname.split("/").filter(Boolean)[0];',
-    '    }',
-    '',
-    '    return url.searchParams.get("v") || undefined;',
-    '  } catch {',
-    '    return undefined;',
-    '  }',
-    '}',
-    '',
-    'function makeYoutubeResultId(youtubeUrl) {',
-    '  return `yt:${createHash("sha256").update(youtubeUrl).digest("base64url").slice(0, 32)}`;',
-    '}',
-    '',
-    'function makeYoutubeMusicSearchUrl(track) {'
-  ]),
-  "YouTube URL helpers"
-);
-
-replaceIfPresent(
-  block([
-    'function deriveSpootyYoutubeBaseUrl(spootyBaseUrl) {',
-    '  if (!spootyBaseUrl) return "";',
-    '',
-    '  try {',
-    '    const url = new URL(spootyBaseUrl);',
-    '    if (url.port === "3000") url.port = "3001";',
-    '    return trimTrailingSlash(url.toString());',
-    '  } catch {',
-    '    return "";',
-    '  }',
-    '}'
-  ]),
-  block([
-    'function deriveSpootyYoutubeBaseUrl(spootyBaseUrl) {',
-    '  if (!spootyBaseUrl) return "";',
-    '',
-    '  try {',
-    '    const url = new URL(spootyBaseUrl);',
-    '    if (url.protocol === "http:" && (!url.port || url.port === "3000")) url.port = "3001";',
-    '    return trimTrailingSlash(url.toString());',
-    '  } catch {',
-    '    return "";',
-    '  }',
-    '}'
-  ])
-);
-
-replaceOnce(
-  'function trimTrailingSlash(value) {',
-  block([
-    'function deriveSpootyYoutubeBaseUrl(spootyBaseUrl) {',
-    '  if (!spootyBaseUrl) return "";',
-    '',
-    '  try {',
-    '    const url = new URL(spootyBaseUrl);',
-    '    if (url.protocol === "http:" && (!url.port || url.port === "3000")) url.port = "3001";',
-    '    return trimTrailingSlash(url.toString());',
-    '  } catch {',
-    '    return "";',
-    '  }',
-    '}',
-    '',
-    'function trimTrailingSlash(value) {'
-  ]),
-  "Spooty YouTube sidecar base URL helper"
-);
+if (!source.includes("async function getYoutubeInlineTrack(queryText)")) {
+  const insertionPoint = "\nasync function answerWithYoutubeResult";
+  if (!source.includes(insertionPoint)) {
+    throw new Error("Could not insert YouTube link helpers.");
+  }
+  source = source.replace(insertionPoint, `${helper}${insertionPoint}`);
+  changed = true;
+}
 
 if (changed) {
   writeFileSync(indexPath, source);
