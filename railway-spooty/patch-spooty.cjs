@@ -15,6 +15,22 @@ function replaceOnce(src, before, after, label) {
   return src.replace(before, after);
 }
 
+patchFile('src/backend/src/playlist/dto/create-playlist.dto.ts', (src) => {
+  const importBefore = `import { IsString, IsUrl, MaxLength } from 'class-validator';`;
+  const importAfter = `import { IsBoolean, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';`;
+  src = replaceOnce(src, importBefore, importAfter, 'playlist DTO validator imports');
+
+  const fieldBefore = `  spotifyUrl: string;
+}`;
+  const fieldAfter = `  spotifyUrl: string;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}`;
+  return replaceOnce(src, fieldBefore, fieldAfter, 'playlist DTO active field');
+});
+
 patchFile('src/backend/src/shared/youtube.service.ts', (src) => {
   const cookiesBefore = `    if (cookiesFile && fs.existsSync(cookiesFile)) {
       this.logger.debug(\`Using cookies file: \${cookiesFile}\`);
