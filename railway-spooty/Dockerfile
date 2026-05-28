@@ -2,8 +2,10 @@ FROM node:20.20.0-alpine AS builder
 
 WORKDIR /spooty
 
-RUN apk add --no-cache git \
-  && git clone --depth 1 https://github.com/Raiper34/spooty.git . \
+RUN apk add --no-cache ca-certificates wget tar \
+  && wget -O /tmp/spooty.tar.gz https://github.com/Raiper34/spooty/archive/refs/heads/main.tar.gz \
+  && tar -xzf /tmp/spooty.tar.gz --strip-components=1 -C . \
+  && rm /tmp/spooty.tar.gz \
   && npm ci \
   && npm run build
 
