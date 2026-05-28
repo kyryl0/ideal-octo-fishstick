@@ -37,6 +37,7 @@ RUN apk add --no-cache make g++ python3 py3-pip ffmpeg redis \
   && python3 -m pip show yt-dlp-ejs \
   && chmod +x /spooty/start-spooty.sh \
   && which yt-dlp \
+  && grep -F "active" backend/playlist/dto/create-playlist.dto.js \
   && grep -F "YouTube cookies file not found or empty" backend/shared/youtube.service.js \
   && grep -F "createYoutubeTrack" backend/playlist/playlist.service.js \
   && grep -F "savedTrack.youtubeUrl" backend/track/track.service.js \
