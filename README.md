@@ -38,13 +38,12 @@ Do not set `PORT` or `APP_PORT`; Railway provides `PORT` and the app reads it au
 /railway-spooty
 ```
 
-This service uses `railway-spooty/Dockerfile`, which wraps `raiper34/spooty:latest`, installs SQLite support and `yt-dlp`, patches Spooty's YouTube service, and starts a small sidecar on port `3001` for direct YouTube / YouTube Music links.
+This service uses `railway-spooty/Dockerfile`, downloads a public Spooty fork, installs SQLite support plus a current `yt-dlp`, and patches Spooty's YouTube service so direct YouTube / YouTube Music links route through the same Spooty backend.
 
 Name the service `spooty` if possible. With that service name, the bot uses these internal Railway addresses:
 
 ```text
 SPOOTY_BASE_URL=http://spooty.railway.internal:3000
-SPOOTY_YOUTUBE_BASE_URL=http://spooty.railway.internal:3001
 ```
 
 If you use another service name or public Spooty domains, set those bot variables explicitly.
@@ -60,6 +59,24 @@ REDIS_RUN=true
 REDIS_HOST=localhost
 REDIS_PORT=6379
 YT_DOWNLOADS_PER_MINUTE=3
+```
+
+For YouTube bot-check failures, add cookies to the Spooty service, not the bot service. Prefer base64 so Railway preserves the exact `cookies.txt` line endings and tabs:
+
+```text
+YT_COOKIES_FILE_BASE64=base64-encoded-netscape-cookies-txt
+```
+
+The startup script also accepts `YT_COOKIES_FILE_CONTENT` and the upstream-compatible `YT_COOKIES` variable. After changing cookie variables, redeploy or restart the Spooty service and check the logs for `YouTube cookies file ready` plus nonzero YouTube/Google and key session cookie counts.
+
+Optional yt-dlp tuning variables for the Spooty service:
+
+```text
+YTDLP_VERBOSE=true
+YTDLP_FORCE_IPV4=true
+YTDLP_DOWNLOAD_EXTRACTOR_ARGS=youtube:player_client=android_vr
+YTDLP_SEARCH_EXTRACTOR_ARGS=youtube:player_client=android_vr
+YTDLP_USER_AGENT=Mozilla/5.0 ...
 ```
 
 6. Deploy/redeploy both services.
@@ -81,7 +98,6 @@ Enable Spooty on the bot with these variables:
 ```text
 AUDIO_PROVIDER=spooty
 SPOOTY_BASE_URL=http://spooty.railway.internal:3000
-SPOOTY_YOUTUBE_BASE_URL=http://spooty.railway.internal:3001
 SPOOTY_AUDIO_EXTENSION=mp3
 ```
 
@@ -89,7 +105,7 @@ Spooty is a separate self-hosted service, not an npm package. Configure it with 
 
 For Spotify inline results, the bot calls Spooty's `/api/playlist` endpoint with the selected Spotify URL, waits for the created track to reach `Completed`, downloads it from `/api/track/download/:id`, saves it under `data/audio`, exposes it at `/files/...`, and passes that public URL to Telegram.
 
-For pasted YouTube / YouTube Music links, the bot returns a direct inline result without requiring Spotify login. When selected, it calls the Spooty wrapper sidecar at `/api/youtube/download`, saves the returned audio under `data/audio`, exposes it at `/files/...`, and edits the Telegram message the same way.
+For pasted YouTube / YouTube Music links, the bot returns a direct inline result without requiring Spotify login. When selected, it sends the YouTube URL to Spooty's patched `/api/playlist` flow, saves the finished audio under `data/audio`, exposes it at `/files/...`, and edits the Telegram message the same way.
 
 Optional tuning:
 

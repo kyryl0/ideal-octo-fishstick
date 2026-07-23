@@ -1,7 +1,7 @@
 const fs = require('fs');
 
 function patchFile(file, patcher) {
-  const src = fs.readFileSync(file, 'utf8');
+  const src = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
   const next = patcher(src);
   fs.writeFileSync(file, next);
 }
@@ -32,6 +32,51 @@ patchFile('src/backend/src/playlist/dto/create-playlist.dto.ts', (src) => {
 });
 
 patchFile('src/backend/src/shared/youtube.service.ts', (src) => {
+  const headersBefore = `const HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+};`;
+  const headersAfter = `const HEADERS = {
+  'User-Agent':
+    process.env.YTDLP_USER_AGENT ||
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+};
+
+function envFlag(name: string): boolean {
+  return ['1', 'true', 'yes', 'on'].includes(
+    String(process.env[name] || '').toLowerCase(),
+  );
+}`;
+  src = replaceOnce(src, headersBefore, headersAfter, 'yt-dlp configurable user agent');
+
+  const searchExtractorBefore = `      '--extractor-args',
+      'youtube:player_client=android_vr',
+      '--add-header',`;
+  const searchExtractorAfter = `      '--extractor-args',
+      process.env.YTDLP_SEARCH_EXTRACTOR_ARGS ||
+        process.env.YTDLP_EXTRACTOR_ARGS ||
+        'youtube:player_client=android_vr',
+      '--add-header',`;
+  src = replaceOnce(src, searchExtractorBefore, searchExtractorAfter, 'yt-dlp search extractor args');
+
+  const searchFlagsBefore = `      searchTarget,
+    ];
+
+    const output = await this.runYtDlpForOutput(args);`;
+  const searchFlagsAfter = `      searchTarget,
+    ];
+
+    if (envFlag('YTDLP_FORCE_IPV4')) {
+      args.push('--force-ipv4');
+    }
+
+    if (envFlag('YTDLP_VERBOSE')) {
+      args.unshift('--verbose');
+    }
+
+    const output = await this.runYtDlpForOutput(args);`;
+  src = replaceOnce(src, searchFlagsBefore, searchFlagsAfter, 'yt-dlp search flags');
+
   const cookiesBefore = `    if (cookiesFile && fs.existsSync(cookiesFile)) {
       this.logger.debug(\`Using cookies file: \${cookiesFile}\`);
       return cookiesFile;
@@ -48,7 +93,61 @@ patchFile('src/backend/src/shared/youtube.service.ts', (src) => {
     }
 
     return null;`;
-  return replaceOnce(src, cookiesBefore, cookiesAfter, 'cookies logging');
+  src = replaceOnce(src, cookiesBefore, cookiesAfter, 'cookies logging');
+
+  const downloadFlagsBefore = `    const args = [
+      '--no-playlist',
+      '--no-cache-dir',
+      '--no-cookies-from-browser',
+      '-f',
+      'bestaudio/best',
+      '--extract-audio',
+      '--audio-format',
+      format,
+      '--audio-quality',
+      quality,
+      '--add-header',
+      \`User-Agent:\${HEADERS['User-Agent']}\`,
+      '-o',
+      output,
+    ];
+
+    if (cookiesFile) {`;
+  const downloadFlagsAfter = `    const args = [
+      '--no-playlist',
+      '--no-cache-dir',
+      '--no-cookies-from-browser',
+      '-f',
+      'bestaudio/best',
+      '--extract-audio',
+      '--audio-format',
+      format,
+      '--audio-quality',
+      quality,
+      '--add-header',
+      \`User-Agent:\${HEADERS['User-Agent']}\`,
+      '-o',
+      output,
+    ];
+
+    const downloadExtractorArgs =
+      process.env.YTDLP_DOWNLOAD_EXTRACTOR_ARGS ||
+      process.env.YTDLP_EXTRACTOR_ARGS;
+
+    if (downloadExtractorArgs) {
+      args.push('--extractor-args', downloadExtractorArgs);
+    }
+
+    if (envFlag('YTDLP_FORCE_IPV4')) {
+      args.push('--force-ipv4');
+    }
+
+    if (envFlag('YTDLP_VERBOSE')) {
+      args.unshift('--verbose');
+    }
+
+    if (cookiesFile) {`;
+  return replaceOnce(src, downloadFlagsBefore, downloadFlagsAfter, 'yt-dlp download flags');
 });
 
 patchFile('src/backend/src/track/track.service.ts', (src) => {
