@@ -32,8 +32,9 @@ RUN apk add --no-cache make g++ python3 py3-pip ffmpeg redis \
   && npm install sqlite3@5.1.7 --save \
   && node -e "require('sqlite3'); console.log('sqlite3 runtime dependency is installed')" \
   && rm -rf src package.json package-lock.json \
-  && python3 -m pip install --break-system-packages --no-cache-dir "yt-dlp[default]" \
+  && python3 -m pip install --break-system-packages --no-cache-dir --upgrade --pre "yt-dlp[default]" bgutil-ytdlp-pot-provider \
   && yt-dlp --version \
+  && python3 -m pip show bgutil-ytdlp-pot-provider \
   && python3 -m pip show yt-dlp-ejs \
   && chmod +x /spooty/start-spooty.sh \
   && which yt-dlp \
