@@ -38,7 +38,7 @@ Do not set `PORT` or `APP_PORT`; Railway provides `PORT` and the app reads it au
 /railway-spooty
 ```
 
-This service uses `railway-spooty/Dockerfile`, downloads a public Spooty fork, installs SQLite support plus a current `yt-dlp`, and patches Spooty's YouTube service so direct YouTube / YouTube Music links route through the same Spooty backend.
+This service uses `railway-spooty/Dockerfile`, downloads a public Spooty fork, installs SQLite support plus a current `yt-dlp`, starts a local bgutil PO-token provider for YouTube bot checks, and patches Spooty's YouTube service so direct YouTube / YouTube Music links route through the same Spooty backend.
 
 Name the service `spooty` if possible. With that service name, the bot uses these internal Railway addresses:
 
@@ -74,10 +74,14 @@ Optional yt-dlp tuning variables for the Spooty service:
 ```text
 YTDLP_VERBOSE=true
 YTDLP_FORCE_IPV4=true
-YTDLP_DOWNLOAD_EXTRACTOR_ARGS=youtube:player_client=android_vr
+YTDLP_DOWNLOAD_EXTRACTOR_ARGS=youtube:player_client=mweb
 YTDLP_SEARCH_EXTRACTOR_ARGS=youtube:player_client=android_vr
 YTDLP_USER_AGENT=Mozilla/5.0 ...
+BGUTIL_PROVIDER_ENABLED=true
+BGUTIL_PROVIDER_PORT=4416
 ```
+
+The Spooty service logs should include `bgutil POT provider is ready`. With `YTDLP_VERBOSE=true`, yt-dlp should also log `PO Token Providers` and include `bgutil:http`.
 
 6. Deploy/redeploy both services.
 7. Open `https://your-service.up.railway.app/health`. It should return `ok`.

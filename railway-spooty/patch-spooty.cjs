@@ -132,7 +132,8 @@ function envFlag(name: string): boolean {
 
     const downloadExtractorArgs =
       process.env.YTDLP_DOWNLOAD_EXTRACTOR_ARGS ||
-      process.env.YTDLP_EXTRACTOR_ARGS;
+      process.env.YTDLP_EXTRACTOR_ARGS ||
+      'youtube:player_client=mweb';
 
     if (downloadExtractorArgs) {
       args.push('--extractor-args', downloadExtractorArgs);
