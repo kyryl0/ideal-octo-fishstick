@@ -36,4 +36,32 @@ else
   echo "YouTube cookies file not found or empty at $COOKIE_FILE"
 fi
 
-exec node backend/main.js
+BGUTIL_PROVIDER_DIR="${BGUTIL_PROVIDER_HOME:-/root/bgutil-ytdlp-pot-provider}/server"
+BGUTIL_PROVIDER_PORT="${BGUTIL_PROVIDER_PORT:-4416}"
+BGUTIL_PROVIDER_PID=""
+
+if [ "${BGUTIL_PROVIDER_ENABLED:-true}" != "false" ] && [ -f "$BGUTIL_PROVIDER_DIR/build/main.js" ]; then
+  echo "Starting bgutil POT provider on 127.0.0.1:${BGUTIL_PROVIDER_PORT}"
+  node "$BGUTIL_PROVIDER_DIR/build/main.js" --port "$BGUTIL_PROVIDER_PORT" &
+  BGUTIL_PROVIDER_PID="$!"
+
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if wget -q -O /dev/null "http://127.0.0.1:${BGUTIL_PROVIDER_PORT}/ping"; then
+      echo "bgutil POT provider is ready"
+      break
+    fi
+    sleep 1
+  done
+else
+  echo "bgutil POT provider is disabled or missing at $BGUTIL_PROVIDER_DIR"
+fi
+
+cleanup() {
+  if [ -n "$BGUTIL_PROVIDER_PID" ]; then
+    kill "$BGUTIL_PROVIDER_PID" 2>/dev/null || true
+  fi
+}
+
+trap cleanup INT TERM EXIT
+
+node backend/main.js
