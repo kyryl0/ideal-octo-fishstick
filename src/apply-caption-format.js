@@ -33,13 +33,12 @@ async function getCurrentTrack(telegramUserId) {
 
   if (res.status === 204) return undefined;
 
-  if (res.status === 401) {
-    delete spotifyTokens[telegramUserId];
-    saveTokens();
-    throw new Error("Spotify token rejected");
+  // A missing player, unavailable playback endpoint, or scope mismatch must not
+  // make an otherwise valid recently-played connection look disconnected.
+  if (!res.ok) {
+    console.warn("Spotify current track lookup skipped:", res.status);
+    return undefined;
   }
-
-  if (!res.ok) throw new Error("Spotify currently playing failed: " + res.status);
 
   const data = await res.json();
   if (data.item?.type !== "track") return undefined;
@@ -65,9 +64,13 @@ if (!source.includes("async function getCurrentTrack(telegramUserId)")) {
 
 const currentTrackNeedle = "    tracks = await getRecentlyPlayed(telegramUserId);";
 const currentTrackReplacement = `    tracks = await getRecentlyPlayed(telegramUserId);
-    const currentTrack = await getCurrentTrack(telegramUserId);
-    if (currentTrack && tracks[0]?.spotifyId !== currentTrack.spotifyId) {
-      tracks = [currentTrack, ...tracks.filter((track) => track.spotifyId !== currentTrack.spotifyId)];
+    try {
+      const currentTrack = await getCurrentTrack(telegramUserId);
+      if (currentTrack && tracks[0]?.spotifyId !== currentTrack.spotifyId) {
+        tracks = [currentTrack, ...tracks.filter((track) => track.spotifyId !== currentTrack.spotifyId)];
+      }
+    } catch (error) {
+      console.warn("Spotify current track lookup skipped:", error.message);
     }`;
 
 if (source.includes(currentTrackNeedle)) {
