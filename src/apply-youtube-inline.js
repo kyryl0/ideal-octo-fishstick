@@ -345,13 +345,13 @@ async function getYoutubeInlineTrack(queryText) {
 
   const youtubeId = getYoutubeVideoId(youtubeUrl);
   const normalizedUrl = youtubeId ? "https://music.youtube.com/watch?v=" + youtubeId : youtubeUrl;
-  const title = await getYoutubeTitle(normalizedUrl);
+  const metadata = await getYoutubeMetadata(normalizedUrl);
   return {
     source: "youtube",
     youtubeId,
     youtubeUrl: normalizedUrl,
-    title,
-    artist: "YouTube",
+    title: metadata.title,
+    artist: metadata.artist || "YouTube",
     album: "Direct link",
     artwork: youtubeId ? "https://img.youtube.com/vi/" + youtubeId + "/hqdefault.jpg" : undefined,
     inlineArtwork: youtubeId ? "https://img.youtube.com/vi/" + youtubeId + "/mqdefault.jpg" : undefined,
@@ -437,18 +437,28 @@ function getYoutubeVideoId(youtubeUrl) {
   }
 }
 
-async function getYoutubeTitle(youtubeUrl) {
+async function getYoutubeMetadata(youtubeUrl) {
   try {
     const url = new URL("https://www.youtube.com/oembed");
     url.searchParams.set("url", youtubeUrl);
     url.searchParams.set("format", "json");
     const res = await fetch(url);
     if (!res.ok) throw new Error("YouTube oEmbed failed: " + res.status);
-    return (await res.json()).title || "YouTube audio";
+    const data = await res.json();
+    return {
+      title: data.title || "YouTube audio",
+      artist: normalizeYoutubeArtist(data.author_name)
+    };
   } catch (err) {
-    console.error("YouTube title lookup failed:", err);
-    return "YouTube audio";
+    console.error("YouTube metadata lookup failed:", err);
+    return { title: "YouTube audio", artist: undefined };
   }
+}
+
+function normalizeYoutubeArtist(value) {
+  return String(value || "")
+    .replace(/\s+-\s+(topic|vevo)$/i, "")
+    .trim() || undefined;
 }
 
 function getPythonCommands() {
