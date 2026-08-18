@@ -9,13 +9,13 @@
     "install": {
       "commands": [
         "...",
-        "python -m pip install --user --break-system-packages ytconverter"
+        "python -m pip install --target .python-packages ytconverter"
       ]
     }
   },
   "deploy": {
     "aptPackages": ["ffmpeg"],
-    "startCommand": "PATH=/root/.local/bin:$PATH npm start"
+    "startCommand": "PYTHONPATH=/app/.python-packages PATH=/app/.python-packages/bin:$PATH npm start"
   }
 }
 
