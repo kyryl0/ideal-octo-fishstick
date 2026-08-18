@@ -89,6 +89,18 @@ insertAfter(
 );
 
 insertAfter(
+  `const TOKEN_PATH = join(DATA_DIR, "spotify-tokens.json");`,
+  `\nconst KNOWN_USER_PATH = join(DATA_DIR, "known-users.json");\nconst OWNER_TELEGRAM_ID = "443036991";`,
+  "new user notification paths"
+);
+
+insertAfter(
+  `const spotifyTokens = loadJson(TOKEN_PATH, {});`,
+  `\nconst knownUsers = loadJson(KNOWN_USER_PATH, {});`,
+  "new user storage"
+);
+
+insertAfter(
   `const jobs = new Map();`,
   `\nconst execFileAsync = promisify(execFile);\nconst songLinkLookups = new Map();`,
   "metadata lookup cache"
@@ -98,6 +110,12 @@ replacePatternOnce(
   /  if \(update\.message\?\.text === "\/start"\) \{[\s\S]*?\n  \}/,
   `  if (update.message?.text === "/start") {\n    const canConnectSpotify = Boolean(SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET);\n    await telegram("sendMessage", {\n      chat_id: update.message.chat.id,\n      text: canConnectSpotify ? "Connect Spotify for recent tracks, or paste a YouTube link inline." : "Paste a YouTube link inline to fetch audio.",\n      reply_markup: canConnectSpotify ? { inline_keyboard: [[{ text: "Connect Spotify", url: makeLoginUrl(update.message.from.id) }]] } : undefined\n    });\n  }`,
   "start message"
+);
+
+replaceOnce(
+  `  if (update.message?.text === "/start") {\n    const canConnectSpotify = Boolean(SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET);`,
+  `  if (update.message?.text === "/start") {\n    await notifyOwnerAboutNewUser(update.message.from);\n    const canConnectSpotify = Boolean(SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET);`,
+  "new user notification on start"
 );
 
 replaceOnce(
@@ -150,6 +168,23 @@ function buildAudioCaption(track, audio, links) {
 );
 
 const helper = `
+async function notifyOwnerAboutNewUser(user) {
+  if (!user || String(user.id) === OWNER_TELEGRAM_ID) return;
+
+  const userId = String(user.id);
+  if (knownUsers[userId]) return;
+
+  const displayName = user.username ? "@" + user.username : [user.first_name, user.last_name].filter(Boolean).join(" ") || "Unknown user";
+  knownUsers[userId] = { username: user.username || undefined, displayName, startedAt: new Date().toISOString() };
+  writeFileSync(KNOWN_USER_PATH, JSON.stringify(knownUsers, null, 2));
+
+  try {
+    await telegram("sendMessage", { chat_id: OWNER_TELEGRAM_ID, text: "New bot user: " + displayName + " (" + userId + ")" });
+  } catch (err) {
+    console.error("New user notification failed:", err);
+  }
+}
+
 async function downloadYoutubeAudio(track) {
   const sourceUrl = track.youtubeUrl || "ytsearch1:" + track.title + " " + track.artist;
   const fileBase = makeAudioFileBase(track, sourceUrl);
