@@ -119,6 +119,12 @@ replaceOnce(
 );
 
 replaceOnce(
+  `    if (url.pathname === "/ytmusic/connect") {\n      await handleYoutubeMusicConnect(url, res);\n      return;\n    }\n\n    if (url.pathname === "/ytmusic/status") {\n      await handleYoutubeMusicStatus(url, res);\n      return;\n    }\n\n    if (url.pathname === "/spotify/login") {`,
+  `    if (url.pathname === "/ytmusic/connect") {\n      await handleYoutubeMusicBrowserConnect(req, url, res);\n      return;\n    }\n\n    if (url.pathname === "/spotify/login") {`,
+  "YouTube Music browser-auth route"
+);
+
+replaceOnce(
   `  if (update.callback_query) {\n    await telegram("answerCallbackQuery", {\n      callback_query_id: update.callback_query.id,\n      text: "Still preparing the audio..."\n    });\n    return;\n  }`,
   `  if (update.callback_query) {\n    await handleCallbackQuery(update.callback_query);\n    return;\n  }`,
   "music source callbacks"
@@ -148,6 +154,12 @@ replaceOnce(
   `async function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {`,
   `async function answerWithYoutubeResult(inlineQueryId, telegramUserId, track) {\n  const resultId = makeYoutubeResultId(telegramUserId, track);\n  chosenTracks.set(resultId, track);\n\n  await telegram("answerInlineQuery", {\n    inline_query_id: inlineQueryId,\n    results: [{\n      type: "article",\n      id: resultId,\n      title: track.title,\n      description: "YouTube link - tap to fetch audio",\n      thumbnail_url: track.artwork,\n      input_message_content: {\n        message_text: "Preparing audio for:\\n" + track.title + "\\n" + track.artist\n      },\n      reply_markup: {\n        inline_keyboard: [[{ text: "Loading audio...", callback_data: "loading" }]]\n      }\n    }],\n    cache_time: 0,\n    is_personal: true\n  });\n}\n\nasync function answerWithYoutubeMusicConnectResult(inlineQueryId, telegramUserId, title = "Connect YouTube Music") {\n  await telegram("answerInlineQuery", {\n    inline_query_id: inlineQueryId,\n    results: [{\n      type: "article",\n      id: "ytmusic-connect",\n      title,\n      description: "Connect your YouTube Music history",\n      input_message_content: { message_text: "Connect YouTube Music, then try again." },\n      reply_markup: {\n        inline_keyboard: [[{ text: "Connect YouTube Music", url: makeYoutubeMusicLoginUrl(telegramUserId) }]]\n      }\n    }],\n    cache_time: 1,\n    is_personal: true\n  });\n}\n\nasync function answerWithMusicTracks(inlineQueryId, telegramUserId, tracks) {\n  if (!tracks.length) {\n    await telegram("answerInlineQuery", {\n      inline_query_id: inlineQueryId,\n      results: [{ type: "article", id: "no-ytmusic-history", title: "No YouTube Music history", description: "Play something in YouTube Music, then try again.", input_message_content: { message_text: "No YouTube Music history found." } }],\n      cache_time: 1,\n      is_personal: true\n    });\n    return;\n  }\n\n  const results = tracks.map((track, index) => {\n    const resultId = makeResultId(telegramUserId, track, index);\n    chosenTracks.set(resultId, track);\n    return {\n      type: "article",\n      id: resultId,\n      title: track.title,\n      description: track.artist + " - " + track.album,\n      thumbnail_url: track.artwork,\n      input_message_content: { message_text: "Preparing audio for:\\n" + track.title + "\\n" + track.artist },\n      reply_markup: { inline_keyboard: [[{ text: "Loading audio...", callback_data: "loading" }]] }\n    };\n  });\n\n  await telegram("answerInlineQuery", { inline_query_id: inlineQueryId, results, cache_time: 0, is_personal: true });\n}\n\nasync function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {`,
   "YouTube and YouTube Music inline result helpers"
+);
+
+replaceOnce(
+  `description: "Connect your YouTube Music history"`,
+  `description: "Connect from a desktop browser"`,
+  "YouTube Music browser-auth inline copy"
 );
 
 replaceOnce(
@@ -538,6 +550,63 @@ async function runYoutubeMusicBridge(action, payload) {
 }
 `;
 
+const ytmusicBrowserHelper = `
+async function handleYoutubeMusicBrowserConnect(req, url, res) {
+  const telegramUserId = url.searchParams.get("telegram_user_id");
+  if (req.method === "GET") {
+    if (!telegramUserId || !/^\\d+$/.test(telegramUserId)) {
+      sendText(res, 400, "missing telegram_user_id");
+      return;
+    }
+
+    const state = randomBytes(24).toString("hex");
+    ytmusicLoginStates.set(state, { telegramUserId, expiresAt: Date.now() + 15 * 60 * 1000 });
+    const actionUrl = new URL(PUBLIC_BASE_URL + "/ytmusic/connect");
+    actionUrl.searchParams.set("state", state);
+    sendHtml(res, 200, "<h1>Connect YouTube Music</h1><p>On a desktop browser, open YouTube Music while signed in. In Developer Tools, copy request headers from an authenticated <code>/browse</code> request and paste them below.</p><form method='post' action='" + escapeHtml(actionUrl.toString()) + "'><textarea name='headers' required autocomplete='off' spellcheck='false' style='width:100%;min-height:16rem'></textarea><p><button type='submit'>Connect</button></p></form>");
+    return;
+  }
+
+  if (req.method !== "POST") {
+    sendText(res, 405, "method not allowed");
+    return;
+  }
+
+  const state = url.searchParams.get("state");
+  const pending = state ? ytmusicLoginStates.get(state) : undefined;
+  if (!pending || pending.expiresAt < Date.now()) {
+    if (state) ytmusicLoginStates.delete(state);
+    sendText(res, 400, "YouTube Music connection expired. Return to Telegram and start again.");
+    return;
+  }
+
+  const form = new URLSearchParams(await readYoutubeMusicHeaders(req));
+  const headers = form.get("headers");
+  if (!headers) {
+    sendText(res, 400, "missing request headers");
+    return;
+  }
+
+  await runYoutubeMusicBridge("configure", {
+    tokenPath: getYoutubeMusicTokenPath(pending.telegramUserId),
+    headers
+  });
+  ytmusicLoginStates.delete(state);
+  sendHtml(res, 200, "<h1>YouTube Music connected</h1><p>Return to Telegram and use the bot inline.</p>");
+}
+
+async function readYoutubeMusicHeaders(req) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > 64 * 1024) throw new Error("YouTube Music headers are too large.");
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+`;
+
 if (!source.includes("async function downloadYoutubeAudio(track)")) {
   const insertionPoint = "\nasync function answerWithYoutubeResult";
   if (!source.includes(insertionPoint)) {
@@ -553,6 +622,28 @@ if (!source.includes("async function getYoutubeMusicHistory(telegramUserId)")) {
     throw new Error("Could not insert YouTube Music helpers.");
   }
   source = source.replace(insertionPoint, `${ytmusicHelper}${insertionPoint}`);
+  changed = true;
+}
+
+if (source.includes("async function getYoutubeMusicHistory(telegramUserId)")) {
+  replaceOnce(
+    `function hasYoutubeMusicConfiguration() {\n  return Boolean(YTMUSIC_CLIENT_ID && YTMUSIC_CLIENT_SECRET);\n}`,
+    `function hasYoutubeMusicConfiguration() {\n  return true;\n}`,
+    "YouTube Music browser-auth configuration"
+  );
+  replaceOnce(
+    `function getYoutubeMusicTokenPath(telegramUserId) {\n  return join(YTMUSIC_TOKEN_DIR, String(telegramUserId), "oauth.json");\n}`,
+    `function getYoutubeMusicTokenPath(telegramUserId) {\n  return join(YTMUSIC_TOKEN_DIR, String(telegramUserId), "browser.json");\n}`,
+    "YouTube Music browser-auth token path"
+  );
+}
+
+if (!source.includes("async function readYoutubeMusicHeaders(req)")) {
+  const insertionPoint = "\nasync function getRecentlyPlayed(telegramUserId)";
+  if (!source.includes(insertionPoint)) {
+    throw new Error("Could not insert YouTube Music browser-auth helpers.");
+  }
+  source = source.replace(insertionPoint, `${ytmusicBrowserHelper}${insertionPoint}`);
   changed = true;
 }
 
