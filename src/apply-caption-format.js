@@ -3,13 +3,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 const indexPath = new URL("./index.js", import.meta.url);
 let source = readFileSync(indexPath, "utf8");
 
-const welcomeMessage = `Welcome to the tiny song contraption, babe. 💅\n\nRight now I only flirt with Spotify: connect your account, then summon me inline in any chat and pick a recent track. I’ll do the audio nonsense. 🪩\n\nTiny bureaucracy jumpscare: the Spotify app is still in development mode, so if login acts allergic to you, message @kyrylo0 first and I’ll add you to the whitelist. 🧾✨`;
+const welcomeMessage = `Welcome to the tiny song contraption, babe. Ã°Å¸ââ¦\n\nRight now I only flirt with Spotify: connect your account, then summon me inline in any chat and pick a recent track. IÃ¢â¬â¢ll do the audio nonsense. Ã°Å¸ÂªÂ©\n\nTiny bureaucracy jumpscare: the Spotify app is still in development mode, so if login acts allergic to you, message @kyrylo0 first and IÃ¢â¬â¢ll add you to the whitelist. Ã°Å¸Â§Â¾Ã¢ÅÂ¨`;
 
 const replacements = [
-  [
-    `const SPOTIFY_SCOPE = "user-read-recently-played";`,
-    `const SPOTIFY_SCOPE = "user-read-recently-played user-read-currently-playing";`
-  ],
   [
     "appleMusic: undefined,",
     "youtubeMusic: makeYoutubeMusicSearchUrl(track),"
@@ -28,11 +24,11 @@ const replacements = [
   ],
   [
     "links.appleMusic ? makeHtmlLink(\"Apple Music\", links.appleMusic) : undefined,",
-    "links.youtubeMusic ? makeHtmlLink(\"Youtube Music 😒\", links.youtubeMusic) : undefined,"
+    "links.youtubeMusic ? makeHtmlLink(\"Youtube Music Ã°Å¸Ëâ\", links.youtubeMusic) : undefined,"
   ],
   [
     "links.youtubeMusic ? makeHtmlLink(\"Youtube Music\", links.youtubeMusic) : undefined,",
-    "links.youtubeMusic ? makeHtmlLink(\"Youtube Music 😒\", links.youtubeMusic) : undefined,"
+    "links.youtubeMusic ? makeHtmlLink(\"Youtube Music Ã°Å¸Ëâ\", links.youtubeMusic) : undefined,"
   ],
   [
     `  return [
@@ -40,19 +36,19 @@ const replacements = [
     audio.credit ? \`Audio: \${escapeHtml(audio.credit)}\` : undefined,
     linkParts.length ? \`Listen: \${linkParts.join(" | ")}\` : undefined
   ].filter(Boolean).join("\\n");`,
-    `  return linkParts.length ? \`💋 \${linkParts.join(" | ")}\` : undefined;`
+    `  return linkParts.length ? \`Ã°Å¸ââ¹ \${linkParts.join(" | ")}\` : undefined;`
   ],
   [
-    `  return linkParts.length ? \`🎧 \${linkParts.join(" | ")}\` : undefined;`,
-    `  return linkParts.length ? \`💋 \${linkParts.join(" | ")}\` : undefined;`
+    `  return linkParts.length ? \`Ã°Å¸Å½Â§ \${linkParts.join(" | ")}\` : undefined;`,
+    `  return linkParts.length ? \`Ã°Å¸ââ¹ \${linkParts.join(" | ")}\` : undefined;`
   ],
   [
     `{ text: "Loading audio...", callback_data: "loading" }`,
-    `{ text: "Loading... 😵‍💫", callback_data: "loading" }`
+    `{ text: "Loading... Ã°Å¸ËÂµÃ¢â¬ÂÃ°Å¸âÂ«", callback_data: "loading" }`
   ],
   [
     `{ text: "Preparing...", callback_data: "loading" }`,
-    `{ text: "Loading... 😵‍💫", callback_data: "loading" }`
+    `{ text: "Loading... Ã°Å¸ËÂµÃ¢â¬ÂÃ°Å¸âÂ«", callback_data: "loading" }`
   ],
   [
     `,
@@ -131,20 +127,6 @@ if (!source.includes("function makeYoutubeMusicSearchUrl(track)")) {
   }
   source = source.replace(insertionPoint, `${helper}${insertionPoint}`);
   changed = true;
-}
-
-const currentTrackNeedle = "    tracks = await getRecentlyPlayed(telegramUserId);";
-const currentTrackReplacement = `    tracks = await getRecentlyPlayed(telegramUserId);
-    const currentTrack = await getCurrentTrack(telegramUserId);
-    if (currentTrack && tracks[0]?.spotifyId !== currentTrack.spotifyId) {
-      tracks = [currentTrack, ...tracks.filter((track) => track.spotifyId !== currentTrack.spotifyId)];
-    }`;
-
-if (source.includes(currentTrackNeedle)) {
-  source = source.replace(currentTrackNeedle, currentTrackReplacement);
-  changed = true;
-} else if (!source.includes("const currentTrack = await getCurrentTrack(telegramUserId);")) {
-  throw new Error("Could not insert currently playing lookup.");
 }
 
 if (changed) {
