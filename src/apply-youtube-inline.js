@@ -22,6 +22,54 @@ function insertAfter(needle, insertion, label) {
   changed = true;
 }
 
+function replacePatternOnce(pattern, replacement, label) {
+  if (!pattern.test(source)) return;
+  source = source.replace(pattern, replacement);
+  changed = true;
+}
+
+replacePatternOnce(
+  /const AUDIO_PROVIDER = [^\n]+\nconst TELEGRAM_MEDIA_TYPE = [^\n]+\nconst SPOOTY_BASE_URL = [^\n]+\nconst SPOOTY_POLL_INTERVAL_MS = [^\n]+\nconst SPOOTY_POLL_TIMEOUT_MS = [^\n]+\nconst SPOOTY_AUDIO_EXTENSION = [^\n]+\n/,
+  `const TELEGRAM_MEDIA_TYPE = process.env.TELEGRAM_MEDIA_TYPE || "audio";\n`,
+  "Spooty configuration constants"
+);
+
+replacePatternOnce(
+  /const YTCONVERTER_AUDIO_EXTENSION = [^\n]+/,
+  `const YTCONVERTER_AUDIO_EXTENSION = normalizeAudioExtension(process.env.YTCONVERTER_AUDIO_EXTENSION || "mp3");`,
+  "ytconverter audio extension"
+);
+
+replacePatternOnce(
+  /if \(AUDIO_PROVIDER === "spooty" && !SPOOTY_BASE_URL\) errors\.push\("SPOOTY_BASE_URL"\);\n/,
+  "",
+  "Spooty config validation"
+);
+
+replacePatternOnce(
+  /async function resolveAudio\(spotifyTrack\) \{[\s\S]*?\n\}/,
+  `async function resolveAudio(track) {
+  return downloadYoutubeAudio(track);
+}`,
+  "single ytconverter audio provider"
+);
+
+replacePatternOnce(
+  /async function downloadSpootyAudio\(spotifyTrack\) \{[\s\S]*?\nasync function serveAudioFile/,
+  `function buildLocalAudioResult(track, fileName) {
+  return {
+    title: track.title,
+    performer: track.artist,
+    durationSeconds: undefined,
+    url: PUBLIC_BASE_URL + "/files/" + encodeURIComponent(fileName),
+    credit: "ytconverter audio."
+  };
+}
+
+async function serveAudioFile`,
+  "remove Spooty download implementation"
+);
+
 insertAfter(
   `import { createHash, randomBytes } from "node:crypto";`,
   `\nimport { execFile } from "node:child_process";`,
@@ -35,8 +83,8 @@ insertAfter(
 );
 
 insertAfter(
-  `const SPOOTY_AUDIO_EXTENSION = normalizeAudioExtension(process.env.SPOOTY_AUDIO_EXTENSION || "mp3");`,
-  `\nconst YTCONVERTER_AUDIO_EXTENSION = normalizeAudioExtension(process.env.YTCONVERTER_AUDIO_EXTENSION || SPOOTY_AUDIO_EXTENSION);\nconst YTCONVERTER_AUDIO_QUALITY = String(process.env.YTCONVERTER_AUDIO_QUALITY || "192");`,
+  `const TELEGRAM_MEDIA_TYPE = process.env.TELEGRAM_MEDIA_TYPE || "audio";`,
+  `\nconst YTCONVERTER_AUDIO_QUALITY = String(process.env.YTCONVERTER_AUDIO_QUALITY || "192");`,
   "ytconverter audio config"
 );
 
@@ -59,36 +107,6 @@ replaceOnce(
 );
 
 replaceOnce(
-  `async function downloadSpootyAudio(spotifyTrack) {\n  if (!SPOOTY_BASE_URL) {`,
-  `async function downloadSpootyAudio(spotifyTrack) {\n  if (spotifyTrack.youtubeUrl) {\n    return downloadYoutubeAudio(spotifyTrack);\n  }\n\n  if (!SPOOTY_BASE_URL) {`,
-  "ytconverter direct download branch"
-);
-
-replaceOnce(
-  `  if (!spotifyTrack.spotifyUrl) {\n    throw new Error("Spotify track URL is missing.");\n  }\n\n  const fileBase = safeSegment(spotifyTrack.spotifyId || createHash("sha256").update(spotifyTrack.spotifyUrl).digest("hex"));`,
-  `  const sourceUrl = spotifyTrack.spotifyUrl;\n\n  if (!sourceUrl) {\n    throw new Error("Spotify track URL is missing.");\n  }\n\n  const fileBase = safeSegment(spotifyTrack.spotifyId || createHash("sha256").update(sourceUrl).digest("hex"));`,
-  "Spotify source URL selection"
-);
-
-replaceOnce(
-  `  const spootyTrack = await createAndWaitForSpootyTrack(spotifyTrack.spotifyUrl);`,
-  `  const spootyTrack = await createAndWaitForSpootyTrack(sourceUrl, spotifyTrack);`,
-  "Spooty metadata create call"
-);
-
-replaceOnce(
-  `async function createAndWaitForSpootyTrack(spotifyUrl) {\n  const createUrl = new URL("/api/playlist", SPOOTY_BASE_URL);\n  const createRes = await fetch(createUrl, {\n    method: "POST",\n    headers: { "content-type": "application/json" },\n    body: JSON.stringify({ spotifyUrl, active: false })\n  });`,
-  `async function createAndWaitForSpootyTrack(spotifyUrl, sourceTrack = {}) {\n  const createUrl = new URL("/api/playlist", SPOOTY_BASE_URL);\n  const createRes = await fetch(createUrl, {\n    method: "POST",\n    headers: { "content-type": "application/json" },\n    body: JSON.stringify({ spotifyUrl, name: sourceTrack.title, active: false })\n  });`,
-  "Spooty create metadata"
-);
-
-replaceOnce(
-  `  if (!createRes.ok) {\n    throw new Error(` + "`Spooty create request failed: ${createRes.status}`" + `);\n  }`,
-  `  if (!createRes.ok) {\n    const errorText = await createRes.text().catch(() => "");\n    throw new Error(` + "`Spooty create request failed: ${createRes.status}${formatRemoteError(errorText)}`" + `);\n  }`,
-  "Spooty create response details"
-);
-
-replaceOnce(
   `async function resolveSongLinks(track) {\n  const fallbackOther = track.spotifyId ? ` + "`https://song.link/s/${track.spotifyId}`" + ` : track.spotifyUrl;`,
   `async function resolveSongLinks(track) {\n  if (track.youtubeUrl) {\n    return {\n      spotify: undefined,\n      appleMusic: undefined,\n      youtubeMusic: track.youtubeUrl,\n      other: track.youtubeUrl\n    };\n  }\n\n  const fallbackOther = track.spotifyId ? ` + "`https://song.link/s/${track.spotifyId}`" + ` : track.spotifyUrl;`,
   "YouTube song links"
@@ -96,10 +114,7 @@ replaceOnce(
 
 const helper = `
 async function downloadYoutubeAudio(track) {
-  const sourceUrl = track.youtubeUrl;
-  if (!sourceUrl) {
-    throw new Error("YouTube URL is missing.");
-  }
+  const sourceUrl = track.youtubeUrl || "ytsearch1:" + track.title + " " + track.artist;
 
   const fileBase = safeSegment(track.youtubeId || createHash("sha256").update(sourceUrl).digest("hex"));
   const cachedFileName = findCachedAudioFile(fileBase);
@@ -143,12 +158,13 @@ payload = json.loads(base64.b64decode(sys.argv[1]).decode("utf-8"))
 options = {
     "format": "bestaudio/best",
     "outtmpl": payload["outputTemplate"],
+    "noplaylist": True,
     "quiet": True,
     "no_warnings": True,
     "postprocessors": [{
         "key": "FFmpegExtractAudio",
         "preferredcodec": payload["audioFormat"],
-        "preferredquality": payload["audioQuality"],
+    "preferredquality": payload["audioQuality"],
     }],
 }
 
