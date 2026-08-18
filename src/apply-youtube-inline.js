@@ -474,6 +474,52 @@ replaceOnce(
   "unique Spotify inline result IDs"
 );
 
+const currentTrackHelper = `
+async function getCurrentTrack(telegramUserId) {
+  const token = await getValidSpotifyToken(telegramUserId);
+  const headers = { authorization: "Bearer " + token.access_token, "cache-control": "no-cache" };
+  let res = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
+    headers,
+    cache: "no-store"
+  });
+
+  if (res.status === 204) return undefined;
+
+  if (!res.ok) {
+    console.warn("Spotify current track lookup skipped:", res.status);
+    res = await fetch("https://api.spotify.com/v1/me/player", {
+      headers,
+      cache: "no-store"
+    });
+    if (res.status === 204) return undefined;
+    if (!res.ok) {
+      console.warn("Spotify playback state lookup skipped:", res.status);
+      return undefined;
+    }
+  }
+
+  const data = await res.json();
+  if (data.item?.type !== "track") return undefined;
+
+  return {
+    spotifyId: data.item.id,
+    title: data.item.name,
+    artist: data.item.artists?.map((artist) => artist.name).join(", ") || "Unknown artist",
+    album: data.item.album?.name || "Unknown album",
+    artwork: data.item.album?.images?.at(-1)?.url || data.item.album?.images?.[0]?.url,
+    playedAt: new Date().toISOString(),
+    spotifyUrl: data.item.external_urls?.spotify
+  };
+}
+`;
+
+if (!source.includes("async function getCurrentTrack(telegramUserId)")) {
+  const insertionPoint = "\nasync function answerWithYoutubeResult";
+  if (!source.includes(insertionPoint)) throw new Error("Could not insert Spotify live-track helper.");
+  source = source.replace(insertionPoint, `${currentTrackHelper}${insertionPoint}`);
+  changed = true;
+}
+
 if (changed) {
   writeFileSync(indexPath, source);
   console.log("Applied Spotify metadata and YouTube audio support.");
