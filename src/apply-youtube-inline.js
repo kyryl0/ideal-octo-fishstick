@@ -123,8 +123,7 @@ async function downloadYoutubeAudio(track) {
     return buildLocalAudioResult(track, cachedFileName);
   }
 
-  const outputTemplate = join(AUDIO_DIR, \`\${fileBase}.%(ext)s\`);
-  await runYtConverterDownload(sourceUrl, outputTemplate);
+  await runYtConverterDownload(sourceUrl, AUDIO_DIR, fileBase);
 
   const downloadedFileName = findCachedAudioFile(fileBase);
   if (!downloadedFileName) {
@@ -134,42 +133,60 @@ async function downloadYoutubeAudio(track) {
   return buildLocalAudioResult(track, downloadedFileName);
 }
 
-async function runYtConverterDownload(sourceUrl, outputTemplate) {
+async function runYtConverterDownload(sourceUrl, outputDir, fileBase) {
   const payload = Buffer.from(JSON.stringify({
     url: sourceUrl,
-    outputTemplate,
+    outputDir,
+    fileBase,
     audioFormat: YTCONVERTER_AUDIO_EXTENSION,
     audioQuality: YTCONVERTER_AUDIO_QUALITY
   })).toString("base64");
 
   const script = \`
 import base64
+import builtins
 import json
+import os
+import re
 import sys
-
-try:
-    import ytconverter  # noqa: F401 - validates the requested downloader package is installed
-except Exception:
-    pass
-
-from yt_dlp import YoutubeDL
+from pathlib import Path
 
 payload = json.loads(base64.b64decode(sys.argv[1]).decode("utf-8"))
-options = {
-    "format": "bestaudio/best",
-    "outtmpl": payload["outputTemplate"],
-    "noplaylist": True,
-    "quiet": True,
-    "no_warnings": True,
-    "postprocessors": [{
-        "key": "FFmpegExtractAudio",
-        "preferredcodec": payload["audioFormat"],
-    "preferredquality": payload["audioQuality"],
-    }],
-}
+if payload["audioFormat"].lower() != "mp3":
+    raise SystemExit("ytconverter single_mp3 supports only MP3 output")
 
-with YoutubeDL(options) as ydl:
-    ydl.download([payload["url"]])
+output_dir = Path(payload["outputDir"])
+output_dir.mkdir(parents=True, exist_ok=True)
+cookie_b64 = os.environ.get("YT_COOKIES_FILE_BASE64")
+if cookie_b64:
+    cookie_path = output_dir / ".yt-cookies.txt"
+    cookie_path.write_bytes(base64.b64decode(cookie_b64))
+    config_home = output_dir / ".yt-dlp-config"
+    config_dir = config_home / "yt-dlp"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "config").write_text("--cookies\\n" + str(cookie_path) + "\\n")
+    os.environ["XDG_CONFIG_HOME"] = str(config_home)
+
+before = {
+    path.resolve() for path in output_dir.iterdir()
+    if path.is_file() and not path.name.startswith(".")
+}
+answers = iter([payload["url"], "0", str(output_dir)])
+builtins.input = lambda prompt="": next(answers)
+
+import ytconverter.downloaders.single_mp3 as single_mp3
+single_mp3.URL_RE = re.compile(r".+")
+single_mp3.run()
+
+created = [
+    path for path in output_dir.iterdir()
+    if path.is_file() and not path.name.startswith(".") and path.resolve() not in before
+]
+if not created:
+    raise SystemExit("ytconverter did not create an audio file")
+
+created.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+created[0].rename(output_dir / (payload["fileBase"] + ".mp3"))
 \`;
 
   const errors = [];
