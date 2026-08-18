@@ -124,11 +124,13 @@ replaceOnce(
   "music source callbacks"
 );
 
-replaceOnce(
-  `  if (update.message?.text === "/start") {\n    const loginUrl = makeLoginUrl(update.message.from.id);\n    await telegram("sendMessage", {\n      chat_id: update.message.chat.id,\n      text: "Connect Spotify, then use me inline.",\n      reply_markup: {\n        inline_keyboard: [[{ text: "Connect Spotify", url: loginUrl }]]\n      }\n    });\n  }`,
-  `  if (update.message?.text === "/start") {\n    await sendStartMessage(update.message);\n  }`,
-  "music source start message"
-);
+if (!source.includes("await sendStartMessage(update.message);")) {
+  replacePatternOnce(
+    /  if \(update\.message\?\.text === "\/start"\) \{[\s\S]*?\n  \}/,
+    `  if (update.message?.text === "/start") {\n    await sendStartMessage(update.message);\n  }`,
+    "music source start message"
+  );
+}
 
 replaceOnce(
   `async function handleInlineQuery(query) {\n  const telegramUserId = String(query.from.id);\n\n  if (!spotifyTokens[telegramUserId]) {`,
@@ -455,7 +457,7 @@ async function handleYoutubeMusicConnect(url, res) {
   verificationUrl.searchParams.set("user_code", authorization.user_code);
   const statusUrl = new URL(PUBLIC_BASE_URL + "/ytmusic/status");
   statusUrl.searchParams.set("state", state);
-  sendHtml(res, 200, "<h1>Connect YouTube Music</h1><p><a href=\"" + escapeHtml(verificationUrl.toString()) + "\">Open Google and continue</a></p><p>Code: <strong>" + escapeHtml(authorization.user_code) + "</strong></p><p>This page will finish automatically after approval.</p><meta http-equiv=\"refresh\" content=\"4; url=" + escapeHtml(statusUrl.toString()) + "\">");
+  sendHtml(res, 200, "<h1>Connect YouTube Music</h1><p><a href='" + escapeHtml(verificationUrl.toString()) + "'>Open Google and continue</a></p><p>Code: <strong>" + escapeHtml(authorization.user_code) + "</strong></p><p>This page will finish automatically after approval.</p><meta http-equiv='refresh' content='4; url=" + escapeHtml(statusUrl.toString()) + "'>");
 }
 
 async function handleYoutubeMusicStatus(url, res) {
@@ -479,7 +481,7 @@ async function handleYoutubeMusicStatus(url, res) {
   if (result.state === "authorization_pending" || result.state === "slow_down") {
     const statusUrl = new URL(PUBLIC_BASE_URL + "/ytmusic/status");
     statusUrl.searchParams.set("state", state);
-    sendHtml(res, 200, "<h1>Waiting for Google approval</h1><p>Finish the approval in the Google page, then this page will continue automatically.</p><meta http-equiv=\"refresh\" content=\"4; url=" + escapeHtml(statusUrl.toString()) + "\">");
+    sendHtml(res, 200, "<h1>Waiting for Google approval</h1><p>Finish the approval in the Google page, then this page will continue automatically.</p><meta http-equiv='refresh' content='4; url=" + escapeHtml(statusUrl.toString()) + "'>");
     return;
   }
 
