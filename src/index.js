@@ -202,7 +202,7 @@ async function handleInlineQuery(query) {
       id: resultId,
       title: track.title,
       description: `${track.artist} - ${track.album}`,
-      thumbnail_url: track.artwork,
+      thumbnail_url: track.inlineArtwork || track.artwork,
       input_message_content: {
         message_text: `Preparing audio for:\n${track.title}\n${track.artist} - ${track.album}`
       },
@@ -259,8 +259,6 @@ async function handleChosenInlineResult(chosen) {
 async function prepareAndSwap(inlineMessageId, spotifyTrack) {
   try {
     await editText(inlineMessageId, `Loading audio...\n${spotifyTrack.title}\n${spotifyTrack.artist} - ${spotifyTrack.album}`);
-    await sleep(1200);
-
     const audio = await resolveAudio(spotifyTrack);
     const links = await resolveSongLinks(spotifyTrack);
     await editInlineMedia(inlineMessageId, audio, spotifyTrack, links);
@@ -551,6 +549,7 @@ async function getRecentlyPlayed(telegramUserId) {
       artist: item.track.artists?.map((artist) => artist.name).join(", ") || "Unknown artist",
       album: item.track.album?.name || "Unknown album",
       artwork: item.track.album?.images?.[0]?.url || item.track.album?.images?.at(-1)?.url,
+      inlineArtwork: item.track.album?.images?.[1]?.url || item.track.album?.images?.at(-1)?.url || item.track.album?.images?.[0]?.url,
       playedAt: item.played_at,
       spotifyUrl: item.track.external_urls?.spotify
     }));
