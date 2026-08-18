@@ -3,9 +3,13 @@ import { readFileSync, writeFileSync } from "node:fs";
 const indexPath = new URL("./index.js", import.meta.url);
 let source = readFileSync(indexPath, "utf8");
 
-const welcomeMessage = `Welcome to the tiny song contraption, babe. Ã°Å¸ââ¦\n\nRight now I only flirt with Spotify: connect your account, then summon me inline in any chat and pick a recent track. IÃ¢â¬â¢ll do the audio nonsense. Ã°Å¸ÂªÂ©\n\nTiny bureaucracy jumpscare: the Spotify app is still in development mode, so if login acts allergic to you, message @kyrylo0 first and IÃ¢â¬â¢ll add you to the whitelist. Ã°Å¸Â§Â¾Ã¢ÅÂ¨`;
+const welcomeMessage = `Welcome to the tiny song contraption, babe. ÃÆÃÂ°Ãâ¦ÃÂ¸ÃÂ¢Ãâ¬Ãâ¢ÃÂ¢Ãâ¬ÃÂ¦\n\nRight now I only flirt with Spotify: connect your account, then summon me inline in any chat and pick a recent track. IÃÆÃÂ¢ÃÂ¢ÃâÃÂ¬ÃÂ¢ÃâÃÂ¢ll do the audio nonsense. ÃÆÃÂ°Ãâ¦ÃÂ¸ÃâÃÂªÃâÃÂ©\n\nTiny bureaucracy jumpscare: the Spotify app is still in development mode, so if login acts allergic to you, message @kyrylo0 first and IÃÆÃÂ¢ÃÂ¢ÃâÃÂ¬ÃÂ¢ÃâÃÂ¢ll add you to the whitelist. ÃÆÃÂ°Ãâ¦ÃÂ¸ÃâÃÂ§ÃâÃÂ¾ÃÆÃÂ¢Ãâ¦ÃâÃâÃÂ¨`;
 
 const replacements = [
+  [
+    `const SPOTIFY_SCOPE = "user-read-recently-played";`,
+    `const SPOTIFY_SCOPE = "user-read-recently-played user-read-currently-playing";`
+  ],
   [
     "appleMusic: undefined,",
     "youtubeMusic: makeYoutubeMusicSearchUrl(track),"
@@ -24,11 +28,11 @@ const replacements = [
   ],
   [
     "links.appleMusic ? makeHtmlLink(\"Apple Music\", links.appleMusic) : undefined,",
-    "links.youtubeMusic ? makeHtmlLink(\"Youtube Music Ã°Å¸Ëâ\", links.youtubeMusic) : undefined,"
+    "links.youtubeMusic ? makeHtmlLink(\"Youtube Music ÃÆÃÂ°Ãâ¦ÃÂ¸Ãâ¹ÃÅÃÂ¢Ãâ¬Ãâ¢\", links.youtubeMusic) : undefined,"
   ],
   [
     "links.youtubeMusic ? makeHtmlLink(\"Youtube Music\", links.youtubeMusic) : undefined,",
-    "links.youtubeMusic ? makeHtmlLink(\"Youtube Music Ã°Å¸Ëâ\", links.youtubeMusic) : undefined,"
+    "links.youtubeMusic ? makeHtmlLink(\"Youtube Music ÃÆÃÂ°Ãâ¦ÃÂ¸Ãâ¹ÃÅÃÂ¢Ãâ¬Ãâ¢\", links.youtubeMusic) : undefined,"
   ],
   [
     `  return [
@@ -36,19 +40,19 @@ const replacements = [
     audio.credit ? \`Audio: \${escapeHtml(audio.credit)}\` : undefined,
     linkParts.length ? \`Listen: \${linkParts.join(" | ")}\` : undefined
   ].filter(Boolean).join("\\n");`,
-    `  return linkParts.length ? \`Ã°Å¸ââ¹ \${linkParts.join(" | ")}\` : undefined;`
+    `  return linkParts.length ? \`ÃÆÃÂ°Ãâ¦ÃÂ¸ÃÂ¢Ãâ¬Ãâ¢ÃÂ¢Ãâ¬ÃÂ¹ \${linkParts.join(" | ")}\` : undefined;`
   ],
   [
-    `  return linkParts.length ? \`Ã°Å¸Å½Â§ \${linkParts.join(" | ")}\` : undefined;`,
-    `  return linkParts.length ? \`Ã°Å¸ââ¹ \${linkParts.join(" | ")}\` : undefined;`
+    `  return linkParts.length ? \`ÃÆÃÂ°Ãâ¦ÃÂ¸Ãâ¦ÃÂ½ÃâÃÂ§ \${linkParts.join(" | ")}\` : undefined;`,
+    `  return linkParts.length ? \`ÃÆÃÂ°Ãâ¦ÃÂ¸ÃÂ¢Ãâ¬Ãâ¢ÃÂ¢Ãâ¬ÃÂ¹ \${linkParts.join(" | ")}\` : undefined;`
   ],
   [
     `{ text: "Loading audio...", callback_data: "loading" }`,
-    `{ text: "Loading... Ã°Å¸ËÂµÃ¢â¬ÂÃ°Å¸âÂ«", callback_data: "loading" }`
+    `{ text: "Loading... ÃÆÃÂ°Ãâ¦ÃÂ¸Ãâ¹ÃÅÃâÃÂµÃÆÃÂ¢ÃÂ¢ÃâÃÂ¬ÃâÃÂÃÆÃÂ°Ãâ¦ÃÂ¸ÃÂ¢Ãâ¬Ãâ¢ÃâÃÂ«", callback_data: "loading" }`
   ],
   [
     `{ text: "Preparing...", callback_data: "loading" }`,
-    `{ text: "Loading... Ã°Å¸ËÂµÃ¢â¬ÂÃ°Å¸âÂ«", callback_data: "loading" }`
+    `{ text: "Loading... ÃÆÃÂ°Ãâ¦ÃÂ¸Ãâ¹ÃÅÃâÃÂµÃÆÃÂ¢ÃÂ¢ÃâÃÂ¬ÃâÃÂÃÆÃÂ°Ãâ¦ÃÂ¸ÃÂ¢Ãâ¬Ãâ¢ÃâÃÂ«", callback_data: "loading" }`
   ],
   [
     `,
@@ -83,13 +87,10 @@ async function getCurrentTrack(telegramUserId) {
 
   if (res.status === 204) return undefined;
 
-  if (res.status === 401) {
-    delete spotifyTokens[telegramUserId];
-    saveTokens();
-    throw new Error("Spotify token rejected");
+  if (!res.ok) {
+    console.warn("Spotify current track lookup skipped:", res.status);
+    return undefined;
   }
-
-  if (!res.ok) throw new Error(\`Spotify currently playing failed: \${res.status}\`);
 
   const data = await res.json();
   if (data.item?.type !== "track") return undefined;
@@ -127,6 +128,20 @@ if (!source.includes("function makeYoutubeMusicSearchUrl(track)")) {
   }
   source = source.replace(insertionPoint, `${helper}${insertionPoint}`);
   changed = true;
+}
+
+const currentTrackNeedle = "    tracks = await getRecentlyPlayed(telegramUserId);";
+const currentTrackReplacement = `    tracks = await getRecentlyPlayed(telegramUserId);
+    const currentTrack = await getCurrentTrack(telegramUserId);
+    if (currentTrack && tracks[0]?.spotifyId !== currentTrack.spotifyId) {
+      tracks = [currentTrack, ...tracks.filter((track) => track.spotifyId !== currentTrack.spotifyId)];
+    }`;
+
+if (source.includes(currentTrackNeedle)) {
+  source = source.replace(currentTrackNeedle, currentTrackReplacement);
+  changed = true;
+} else if (!source.includes("const currentTrack = await getCurrentTrack(telegramUserId);")) {
+  throw new Error("Could not insert currently playing lookup.");
 }
 
 if (changed) {
