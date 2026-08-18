@@ -176,6 +176,22 @@ builtins.input = lambda prompt="": next(answers)
 
 import ytconverter.downloaders.single_mp3 as single_mp3
 single_mp3.URL_RE = re.compile(r".+")
+original_check_output = single_mp3.sp.check_output
+original_run = single_mp3.sp.run
+
+def yt_dlp_module_command(command):
+    if command and command[0] == "yt-dlp":
+        return [sys.executable, "-m", "yt_dlp", *command[1:]]
+    return command
+
+def check_output(command, *args, **kwargs):
+    return original_check_output(yt_dlp_module_command(command), *args, **kwargs)
+
+def run(command, *args, **kwargs):
+    return original_run(yt_dlp_module_command(command), *args, **kwargs)
+
+single_mp3.sp.check_output = check_output
+single_mp3.sp.run = run
 single_mp3.run()
 
 created = [
