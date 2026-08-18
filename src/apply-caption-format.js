@@ -12,7 +12,7 @@ function replaceAll(before, after) {
 
 replaceAll(
   `const SPOTIFY_SCOPE = "user-read-recently-played";`,
-  `const SPOTIFY_SCOPE = "user-read-recently-played user-read-currently-playing user-read-playback-state";`
+  `const SPOTIFY_SCOPE = "user-read-recently-played user-read-currently-playing";`
 );
 replaceAll("cache_time: 1,", "cache_time: 0,");
 replaceAll(
@@ -81,10 +81,7 @@ const currentTrackReplacement = `    tracks = await getRecentlyPlayed(telegramUs
       }
     } catch (error) {
       console.warn("Spotify current track lookup skipped:", error.message);
-    }
-    tracks = tracks.filter((track, index, allTracks) =>
-      track.spotifyId && allTracks.findIndex((candidate) => candidate.spotifyId === track.spotifyId) === index
-    );`;
+    }`;
 
 if (source.includes(currentTrackNeedle)) {
   source = source.replace(currentTrackNeedle, currentTrackReplacement);
