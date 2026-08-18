@@ -94,8 +94,8 @@ insertAfter(
   "metadata lookup cache"
 );
 
-replaceOnce(
-  `  if (update.message?.text === "/start") {\n    const loginUrl = makeLoginUrl(update.message.from.id);\n    await telegram("sendMessage", {\n      chat_id: update.message.chat.id,\n      text: "Connect Spotify, then use me inline in any chat.",\n      reply_markup: {\n        inline_keyboard: [[{ text: "Connect Spotify", url: loginUrl }]]\n      }\n    });\n  }`,
+replacePatternOnce(
+  /  if \(update\.message\?\.text === "\/start"\) \{[\s\S]*?\n  \}/,
   `  if (update.message?.text === "/start") {\n    const canConnectSpotify = Boolean(SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET);\n    await telegram("sendMessage", {\n      chat_id: update.message.chat.id,\n      text: canConnectSpotify ? "Connect Spotify for recent tracks, or paste a YouTube link inline." : "Paste a YouTube link inline to fetch audio.",\n      reply_markup: canConnectSpotify ? { inline_keyboard: [[{ text: "Connect Spotify", url: makeLoginUrl(update.message.from.id) }]] } : undefined\n    });\n  }`,
   "start message"
 );
