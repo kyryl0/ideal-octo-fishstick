@@ -181,7 +181,7 @@ original_run = single_mp3.sp.run
 
 def yt_dlp_module_command(command):
     if command and command[0] == "yt-dlp":
-        return [sys.executable, "-m", "yt_dlp", *command[1:]]
+        return [sys.executable, "-m", "yt_dlp", "--js-runtimes", "node", *command[1:]]
     return command
 
 def check_output(command, *args, **kwargs):
