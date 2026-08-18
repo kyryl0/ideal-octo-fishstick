@@ -550,7 +550,7 @@ async function getRecentlyPlayed(telegramUserId) {
       title: item.track.name,
       artist: item.track.artists?.map((artist) => artist.name).join(", ") || "Unknown artist",
       album: item.track.album?.name || "Unknown album",
-      artwork: item.track.album?.images?.at(-1)?.url || item.track.album?.images?.[0]?.url,
+      artwork: item.track.album?.images?.[0]?.url || item.track.album?.images?.at(-1)?.url,
       playedAt: item.played_at,
       spotifyUrl: item.track.external_urls?.spotify
     }));
