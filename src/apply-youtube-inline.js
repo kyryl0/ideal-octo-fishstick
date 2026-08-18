@@ -462,17 +462,6 @@ if (!source.includes("async function downloadYoutubeAudio(track)")) {
   changed = true;
 }
 
-replaceOnce(
-  '  const res = await fetch("https://api.spotify.com/v1/me/player/recently-played?limit=10", {\n    headers: { authorization: `Bearer ${token.access_token}` }\n  });',
-  '  const res = await fetch("https://api.spotify.com/v1/me/player/recently-played?limit=10&before=" + Date.now(), {\n    headers: { authorization: `Bearer ${token.access_token}`, "cache-control": "no-cache", pragma: "no-cache" },\n    cache: "no-store"\n  });',
-  "fresh Spotify recently played request"
-);
-
-replaceOnce(
-  '    const resultId = makeResultId(telegramUserId, track, index);',
-  '    const resultId = makeResultId(telegramUserId, track, index) + ":" + createHash("sha256").update(query.id).digest("base64url").slice(0, 16);',
-  "unique Spotify inline result IDs"
-);
 
 const currentTrackHelper = `
 async function getCurrentTrack(telegramUserId) {
@@ -520,11 +509,6 @@ if (!source.includes("async function getCurrentTrack(telegramUserId)")) {
   changed = true;
 }
 
-replaceOnce(
-  '  const res = await fetch("https://api.spotify.com/v1/me/player/recently-played?limit=10&before=" + Date.now(), {\n    headers: { authorization: `Bearer ${token.access_token}`, "cache-control": "no-cache", pragma: "no-cache" },\n    cache: "no-store"\n  });',
-  '  const historyAfter = Date.now() - 24 * 60 * 60 * 1000;\n  const res = await fetch("https://api.spotify.com/v1/me/player/recently-played?limit=10&after=" + historyAfter, {\n    headers: { authorization: `Bearer ${token.access_token}`, "cache-control": "no-cache", pragma: "no-cache" },\n    cache: "no-store"\n  });',
-  "recent Spotify listening window"
-);
 
 if (changed) {
   writeFileSync(indexPath, source);
