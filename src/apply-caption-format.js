@@ -12,7 +12,7 @@ function replaceAll(before, after) {
 
 replaceAll(
   `const SPOTIFY_SCOPE = "user-read-recently-played";`,
-  `const SPOTIFY_SCOPE = "user-read-recently-played user-read-currently-playing";`
+  `const SPOTIFY_SCOPE = "user-read-recently-played user-read-currently-playing user-read-playback-state";`
 );
 replaceAll("cache_time: 1,", "cache_time: 0,");
 replaceAll(
@@ -27,17 +27,27 @@ replaceAll(
 const helper = `
 async function getCurrentTrack(telegramUserId) {
   const token = await getValidSpotifyToken(telegramUserId);
-  const res = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
-    headers: { authorization: "Bearer " + token.access_token }
+  const headers = { authorization: "Bearer " + token.access_token, "cache-control": "no-cache" };
+  let res = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
+    headers,
+    cache: "no-store"
   });
 
   if (res.status === 204) return undefined;
 
-  // A missing player, unavailable playback endpoint, or scope mismatch must not
-  // make an otherwise valid recently-played connection look disconnected.
+  // Some Spotify clients reject the narrower endpoint. The playback-state API
+  // returns the same active item and is a reliable fallback with its own scope.
   if (!res.ok) {
     console.warn("Spotify current track lookup skipped:", res.status);
-    return undefined;
+    res = await fetch("https://api.spotify.com/v1/me/player", {
+      headers,
+      cache: "no-store"
+    });
+    if (res.status === 204) return undefined;
+    if (!res.ok) {
+      console.warn("Spotify playback state lookup skipped:", res.status);
+      return undefined;
+    }
   }
 
   const data = await res.json();
