@@ -510,6 +510,12 @@ if (!source.includes("async function getCurrentTrack(telegramUserId)")) {
 }
 
 
+replaceOnce(
+  '  const data = await res.json();\n  return (data.items || [])',
+  '  const data = await res.json();\n  if (String(telegramUserId) === "443036991") {\n    console.log("Spotify diagnostic recently played:", JSON.stringify((data.items || []).map((item) => ({ title: item.track?.name, artist: item.track?.artists?.map((artist) => artist.name).join(", "), playedAt: item.played_at }))));\n  }\n  return (data.items || [])',
+  "owner Spotify history diagnostic"
+);
+
 if (changed) {
   writeFileSync(indexPath, source);
   console.log("Applied Spotify metadata and YouTube audio support.");
