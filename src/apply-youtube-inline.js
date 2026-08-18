@@ -112,16 +112,16 @@ insertAfter(
   "metadata lookup cache"
 );
 
-replacePatternOnce(
-  /  if \(update\.message\?\.text === "\/start"\) \{[\s\S]*?\n  \}/,
-  `  if (update.message?.text === "/start") {\n    const canConnectSpotify = Boolean(SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET);\n    await telegram("sendMessage", {\n      chat_id: update.message.chat.id,\n      text: canConnectSpotify ? "Connect Spotify for recent tracks, or paste a YouTube link inline." : "Paste a YouTube link inline to fetch audio.",\n      reply_markup: canConnectSpotify ? { inline_keyboard: [[{ text: "Connect Spotify", url: makeLoginUrl(update.message.from.id) }]] } : undefined\n    });\n  }`,
-  "start message"
+replaceOnce(
+  `  if (update.message?.text === "/start") {\n    const loginUrl = makeLoginUrl(update.message.from.id);`,
+  `  if (update.message?.text === "/start") {\n    await notifyOwnerAboutNewUser(update.message.from);\n    const loginUrl = makeLoginUrl(update.message.from.id);`,
+  "new user notification on start"
 );
 
 replaceOnce(
-  `  if (update.message?.text === "/start") {\n    const canConnectSpotify = Boolean(SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET);`,
-  `  if (update.message?.text === "/start") {\n    await notifyOwnerAboutNewUser(update.message.from);\n    const canConnectSpotify = Boolean(SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET);`,
-  "new user notification on start"
+  `  authUrl.searchParams.set("scope", SPOTIFY_SCOPE);\n  authUrl.searchParams.set("state", state);`,
+  `  authUrl.searchParams.set("scope", SPOTIFY_SCOPE);\n  authUrl.searchParams.set("show_dialog", "true");\n  authUrl.searchParams.set("state", state);`,
+  "Spotify playback scope consent"
 );
 
 replaceOnce(
