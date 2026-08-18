@@ -14,6 +14,7 @@ replaceAll(
   `const SPOTIFY_SCOPE = "user-read-recently-played";`,
   `const SPOTIFY_SCOPE = "user-read-recently-played user-read-currently-playing";`
 );
+replaceAll("cache_time: 1,", "cache_time: 0,");
 replaceAll(
   `{ text: "Loading audio...", callback_data: "loading" }`,
   `{ text: "Loading... \\u{1F504}", callback_data: "loading" }`
@@ -22,11 +23,6 @@ replaceAll(
   `{ text: "Preparing...", callback_data: "loading" }`,
   `{ text: "Loading... \\u{1F504}", callback_data: "loading" }`
 );
-replaceAll(
-  `text: "Connect Spotify, then use me inline in any chat.",`,
-  `text: "Connect Spotify for recent tracks, or paste a YouTube link inline.",`
-);
-replaceAll("cache_time: 1,", "cache_time: 0,");
 
 const helper = `
 async function getCurrentTrack(telegramUserId) {
@@ -35,13 +31,19 @@ async function getCurrentTrack(telegramUserId) {
     headers: { authorization: "Bearer " + token.access_token }
   });
 
-  if (res.status === 204 || !res.ok) {
-    if (res.status !== 204) console.warn("Spotify current track lookup skipped:", res.status);
-    return undefined;
+  if (res.status === 204) return undefined;
+
+  if (res.status === 401) {
+    delete spotifyTokens[telegramUserId];
+    saveTokens();
+    throw new Error("Spotify token rejected");
   }
+
+  if (!res.ok) throw new Error("Spotify currently playing failed: " + res.status);
 
   const data = await res.json();
   if (data.item?.type !== "track") return undefined;
+
   return {
     spotifyId: data.item.id,
     title: data.item.name,
@@ -61,15 +63,15 @@ if (!source.includes("async function getCurrentTrack(telegramUserId)")) {
   changed = true;
 }
 
-const recentTrackNeedle = "    tracks = await getRecentlyPlayed(telegramUserId);";
-const recentTrackReplacement = `    tracks = await getRecentlyPlayed(telegramUserId);
+const currentTrackNeedle = "    tracks = await getRecentlyPlayed(telegramUserId);";
+const currentTrackReplacement = `    tracks = await getRecentlyPlayed(telegramUserId);
     const currentTrack = await getCurrentTrack(telegramUserId);
     if (currentTrack && tracks[0]?.spotifyId !== currentTrack.spotifyId) {
       tracks = [currentTrack, ...tracks.filter((track) => track.spotifyId !== currentTrack.spotifyId)];
     }`;
 
-if (source.includes(recentTrackNeedle)) {
-  source = source.replace(recentTrackNeedle, recentTrackReplacement);
+if (source.includes(currentTrackNeedle)) {
+  source = source.replace(currentTrackNeedle, currentTrackReplacement);
   changed = true;
 } else if (!source.includes("const currentTrack = await getCurrentTrack(telegramUserId);")) {
   throw new Error("Could not insert currently playing lookup.");
@@ -77,5 +79,5 @@ if (source.includes(recentTrackNeedle)) {
 
 if (changed) {
   writeFileSync(indexPath, source);
-  console.log("Applied fresh Spotify results and encoding-safe loading UI.");
+  console.log("Restored stable Spotify inline history.");
 }
