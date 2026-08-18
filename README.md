@@ -9,7 +9,7 @@ This is a working inline-mode Telegram bot skeleton for the flow:
 5. Telegram sends a small placeholder message immediately.
 6. Bot edits that inline message into an audio message.
 
-With `AUDIO_PROVIDER=spooty`, the final audio comes from a self-hosted Spooty instance. The bot asks Spooty to download the selected Spotify track, then serves the finished audio back to Telegram. It also supports pasted YouTube / YouTube Music links directly in inline mode.
+With `AUDIO_PROVIDER=spooty`, Spotify audio comes from a self-hosted Spooty instance. Pasted YouTube / YouTube Music links are downloaded directly by the bot through the `ytconverter` Python package, then served back to Telegram the same way.
 
 ## Why this shape
 
@@ -109,7 +109,7 @@ Spooty is a separate self-hosted service, not an npm package. Configure it with 
 
 For Spotify inline results, the bot calls Spooty's `/api/playlist` endpoint with the selected Spotify URL, waits for the created track to reach `Completed`, downloads it from `/api/track/download/:id`, saves it under `data/audio`, exposes it at `/files/...`, and passes that public URL to Telegram.
 
-For pasted YouTube / YouTube Music links, the bot returns a direct inline result without requiring Spotify login. When selected, it sends the YouTube URL to Spooty's patched `/api/playlist` flow, saves the finished audio under `data/audio`, exposes it at `/files/...`, and edits the Telegram message the same way.
+For pasted YouTube / YouTube Music links, the bot returns a direct inline result without requiring Spotify login. When selected, it downloads the link as audio through `ytconverter`, saves the finished file under `data/audio`, exposes it at `/files/...`, and edits the Telegram message the same way.
 
 Optional tuning:
 
@@ -117,6 +117,10 @@ Optional tuning:
 SPOOTY_POLL_INTERVAL_MS=3000
 SPOOTY_POLL_TIMEOUT_MS=180000
 TELEGRAM_MEDIA_TYPE=audio
+YTCONVERTER_AUDIO_EXTENSION=mp3
+YTCONVERTER_AUDIO_QUALITY=192
+YTCONVERTER_TIMEOUT_MS=180000
+PYTHON_BIN=python
 ```
 
 Telegram may reject some formats as `InputMediaAudio`; if that happens, the bot automatically retries the edit as a document. Spooty's default `mp3` format is the best fit for Telegram's audio player.
@@ -157,3 +161,4 @@ Open a private chat with the bot and send `/start`, then use the Spotify login l
 - This stores Spotify tokens locally in `data/spotify-tokens.json`; use a real database and encryption for production.
 - Railway's filesystem is ephemeral across deploys/restarts. For continued use, attach a database or volume for Spotify tokens and downloaded audio.
 - After Telegram has cached a track once, a production bot should prefer reusing a Telegram `file_id`.
+
