@@ -131,12 +131,6 @@ replaceOnce(
 );
 
 replaceOnce(
-  `    tracks = await getRecentlyPlayed(telegramUserId);`,
-  `    tracks = await Promise.all((await getRecentlyPlayed(telegramUserId)).map(enrichTrackWithSongLink));`,
-  "Song.link Spotify enrichment"
-);
-
-replaceOnce(
   `async function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {`,
   `async function answerWithYoutubeResult(inlineQueryId, telegramUserId, track) {\n  const resultId = makeYoutubeResultId(telegramUserId, track);\n  chosenTracks.set(resultId, track);\n\n  await telegram("answerInlineQuery", {\n    inline_query_id: inlineQueryId,\n    results: [{\n      type: "article",\n      id: resultId,\n      title: track.title,\n      description: track.artist + " - " + track.album,\n      thumbnail_url: track.artwork,\n      input_message_content: { message_text: "Preparing audio for:\\n" + track.title + "\\n" + track.artist },\n      reply_markup: { inline_keyboard: [[{ text: "Loading audio...", callback_data: "loading" }]] }\n    }],\n    cache_time: 0,\n    is_personal: true\n  });\n}\n\nasync function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {`,
   "YouTube inline result"
@@ -158,11 +152,11 @@ replacePatternOnce(
 function buildAudioCaption(track, audio, links) {
   const linkParts = [
     links.spotify ? makeHtmlLink("Spotify", links.spotify) : undefined,
-    links.youtubeMusic ? makeHtmlLink("Youtube Music ", links.youtubeMusic) + "ÃÆÃÂ°Ãâ¦ÃÂ¸Ãâ¹ÃÅÃÂ¢Ãâ¬Ãâ¢" : undefined,
+    links.youtubeMusic ? makeHtmlLink("Youtube Music ", links.youtubeMusic) + "ÃÆÃÆÃâ ÃâÃÆÃâÃâÃÂ°ÃÆÃÆÃÂ¢Ãâ¬ÃÂ¦ÃÆÃâÃâÃÂ¸ÃÆÃÆÃÂ¢Ãâ¬ÃÂ¹ÃÆÃâÃâ¦ÃâÃÆÃÆÃâÃÂ¢ÃÆÃâÃÂ¢ÃâÃÂ¬ÃÆÃâÃÂ¢ÃâÃÂ¢" : undefined,
     links.songLink ? makeHtmlLink("Other", links.songLink) : undefined
   ].filter(Boolean);
 
-  return linkParts.length ? "ÃÆÃÂ°Ãâ¦ÃÂ¸ÃÂ¢Ãâ¬Ãâ¢ÃÂ¢Ãâ¬ÃÂ¹ " + linkParts.join(" | ") : undefined;
+  return linkParts.length ? "ÃÆÃÆÃâ ÃâÃÆÃâÃâÃÂ°ÃÆÃÆÃÂ¢Ãâ¬ÃÂ¦ÃÆÃâÃâÃÂ¸ÃÆÃÆÃâÃÂ¢ÃÆÃâÃÂ¢ÃâÃÂ¬ÃÆÃâÃÂ¢ÃâÃÂ¢ÃÆÃÆÃâÃÂ¢ÃÆÃâÃÂ¢ÃâÃÂ¬ÃÆÃâÃâÃÂ¹ " + linkParts.join(" | ") : undefined;
 }`,
   "Song.link caption and links"
 );
