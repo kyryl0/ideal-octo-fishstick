@@ -211,8 +211,10 @@ async function downloadYoutubeAudio(track) {
 }
 
 function makeAudioFileBase(track, sourceUrl) {
-  const label = [track.artist, track.title].filter(Boolean).join(" - ");
-  return safeSegment(label || track.youtubeId || createHash("sha256").update(sourceUrl).digest("hex"));
+  const label = safeSegment([track.artist, track.title].filter(Boolean).join(" - ") || "youtube-audio").slice(0, 56);
+  const identity = track.youtubeId || sourceUrl;
+  const uniqueSuffix = createHash("sha256").update(identity).digest("hex").slice(0, 16);
+  return label + "-" + uniqueSuffix;
 }
 
 async function runYtConverterDownload(sourceUrl, outputDir, fileBase, track) {
