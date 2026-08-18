@@ -132,7 +132,7 @@ replaceOnce(
 
 replaceOnce(
   `async function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {`,
-  `async function answerWithYoutubeResult(inlineQueryId, telegramUserId, track) {\n  const resultId = makeYoutubeResultId(telegramUserId, track);\n  chosenTracks.set(resultId, track);\n\n  await telegram("answerInlineQuery", {\n    inline_query_id: inlineQueryId,\n    results: [{\n      type: "article",\n      id: resultId,\n      title: track.title,\n      description: track.artist + " - " + track.album,\n      thumbnail_url: track.artwork,\n      input_message_content: { message_text: "Preparing audio for:\\n" + track.title + "\\n" + track.artist },\n      reply_markup: { inline_keyboard: [[{ text: "Loading audio...", callback_data: "loading" }]] }\n    }],\n    cache_time: 0,\n    is_personal: true\n  });\n}\n\nasync function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {`,
+  `async function answerWithYoutubeResult(inlineQueryId, telegramUserId, track) {\n  const resultId = makeYoutubeResultId(telegramUserId, track);\n  chosenTracks.set(resultId, track);\n\n  await telegram("answerInlineQuery", {\n    inline_query_id: inlineQueryId,\n    results: [{\n      type: "article",\n      id: resultId,\n      title: track.title,\n      description: track.artist + " - " + track.album,\n      thumbnail_url: track.inlineArtwork || track.artwork,\n      input_message_content: { message_text: "Preparing audio for:\\n" + track.title + "\\n" + track.artist },\n      reply_markup: { inline_keyboard: [[{ text: "Loading audio...", callback_data: "loading" }]] }\n    }],\n    cache_time: 0,\n    is_personal: true\n  });\n}\n\nasync function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {`,
   "YouTube inline result"
 );
 
@@ -273,8 +273,6 @@ def yt_dlp_module_command(command):
     if command and command[0] == "yt-dlp":
         command = command[1:]
         runtime = [sys.executable, "-m", "yt_dlp", "--js-runtimes", "node"]
-        if "-x" in command:
-            return [*runtime, "--add-metadata", "--embed-thumbnail", *command]
         return [*runtime, *command]
     return command
 
@@ -356,6 +354,7 @@ async function getYoutubeInlineTrack(queryText) {
     artist: "YouTube",
     album: "Direct link",
     artwork: youtubeId ? "https://img.youtube.com/vi/" + youtubeId + "/hqdefault.jpg" : undefined,
+    inlineArtwork: youtubeId ? "https://img.youtube.com/vi/" + youtubeId + "/mqdefault.jpg" : undefined,
     playedAt: new Date().toISOString()
   };
 }
@@ -498,6 +497,7 @@ async function getCurrentTrack(telegramUserId) {
     artist: data.item.artists?.map((artist) => artist.name).join(", ") || "Unknown artist",
     album: data.item.album?.name || "Unknown album",
     artwork: data.item.album?.images?.[0]?.url || data.item.album?.images?.at(-1)?.url,
+    inlineArtwork: data.item.album?.images?.[1]?.url || data.item.album?.images?.at(-1)?.url || data.item.album?.images?.[0]?.url,
     playedAt: new Date().toISOString(),
     spotifyUrl: data.item.external_urls?.spotify
   };
