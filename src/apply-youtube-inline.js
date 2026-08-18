@@ -520,8 +520,8 @@ function getStartMessage(languageCode) {
 `;
 
 replaceOnce(
-  `        text: "Connect Spotify, then use me inline in any chat.",`,
-  `        text: getStartMessage(update.message.from.language_code),`,
+  `      text: "Connect Spotify, then use me inline in any chat.",`,
+  `      text: getStartMessage(update.message.from.language_code),`,
   "localized welcome message"
 );
 
