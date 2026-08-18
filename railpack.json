@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "provider": "node",
+  "packages": {
+    "node": "20",
+    "python": "3.11"
+  },
+  "steps": {
+    "install": {
+      "commands": [
+        "...",
+        "python -m pip install --user --break-system-packages -r requirements.txt"
+      ]
+    }
+  },
+  "deploy": {
+    "aptPackages": ["ffmpeg"],
+    "startCommand": "PATH=/root/.local/bin:$PATH npm start"
+  }
+}
+
