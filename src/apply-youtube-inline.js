@@ -185,6 +185,7 @@ def yt_dlp_module_command(command):
     return command
 
 def check_output(command, *args, **kwargs):
+    kwargs.pop("stderr", None)
     return original_check_output(yt_dlp_module_command(command), *args, **kwargs)
 
 def run(command, *args, **kwargs):
@@ -215,11 +216,12 @@ created[0].rename(output_dir / (payload["fileBase"] + ".mp3"))
       });
       return;
     } catch (err) {
-      errors.push(\`\${command}: \${err.stderr || err.message}\`);
+      const detail = String(err.stderr || err.message);
+      errors.push(\`\${command}: \${detail.slice(-1200)}\`);
     }
   }
 
-  throw new Error(\`ytconverter download failed: \${errors.join("; ").slice(0, 500)}\`);
+  throw new Error(\`ytconverter download failed: \${errors.join("; ").slice(-1200)}\`);
 }
 
 async function getYoutubeInlineTrack(queryText) {
