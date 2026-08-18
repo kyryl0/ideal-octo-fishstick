@@ -116,7 +116,7 @@ const helper = `
 async function downloadYoutubeAudio(track) {
   const sourceUrl = track.youtubeUrl || "ytsearch1:" + track.title + " " + track.artist;
 
-  const fileBase = safeSegment(track.youtubeId || createHash("sha256").update(sourceUrl).digest("hex"));
+  const fileBase = makeAudioFileBase(track, sourceUrl);
   const cachedFileName = findCachedAudioFile(fileBase);
 
   if (cachedFileName) {
@@ -131,6 +131,11 @@ async function downloadYoutubeAudio(track) {
   }
 
   return buildLocalAudioResult(track, downloadedFileName);
+}
+
+function makeAudioFileBase(track, sourceUrl) {
+  const label = [track.artist, track.title].filter(Boolean).join(" - ");
+  return safeSegment(label || track.youtubeId || createHash("sha256").update(sourceUrl).digest("hex"));
 }
 
 async function runYtConverterDownload(sourceUrl, outputDir, fileBase) {
@@ -181,7 +186,11 @@ original_run = single_mp3.sp.run
 
 def yt_dlp_module_command(command):
     if command and command[0] == "yt-dlp":
-        return [sys.executable, "-m", "yt_dlp", "--js-runtimes", "node", *command[1:]]
+        command = command[1:]
+        runtime = [sys.executable, "-m", "yt_dlp", "--js-runtimes", "node"]
+        if "-x" in command:
+            return [*runtime, "--add-metadata", "--embed-thumbnail", *command]
+        return [*runtime, *command]
     return command
 
 def check_output(command, *args, **kwargs):
