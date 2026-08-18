@@ -510,11 +510,27 @@ if (!source.includes("async function getCurrentTrack(telegramUserId)")) {
 }
 
 
+
+const localizedStartMessageHelper = `
+function getStartMessage(languageCode) {
+  const english = "Welcome to the tiny song contraption, babe. \\ud83d\\udc85\\n\\nRight now I only flirt with Spotify: connect your account, then summon me inline in any chat and pick a recent track. I\\u2019ll do the audio nonsense. \\ud83e\\udea9\\n\\nI also support YouTube links inline now. \\u2728\\n\\nTiny bureaucracy jumpscare: the Spotify app is still in development mode, so if login acts allergic to you, message @kyrylo0 first and I\\u2019ll add you to the whitelist. \\ud83e\\uddfe\\u2728";
+  const ukrainian = "\\u041b\\u0430\\u0441\\u043a\\u0430\\u0432\\u043e \\u043f\\u0440\\u043e\\u0448\\u0443 \\u0434\\u043e \\u043c\\u0430\\u043b\\u0435\\u043d\\u044c\\u043a\\u043e\\u0457 \\u043f\\u0456\\u0441\\u0435\\u043d\\u043d\\u043e\\u0457 \\u043c\\u0430\\u0448\\u0438\\u043d\\u043a\\u0438, \\u0431\\u0435\\u0439\\u0431. \\ud83d\\udc85\\n\\n\\u041f\\u043e\\u043a\\u0438 \\u0449\\u043e \\u044f \\u0444\\u043b\\u0456\\u0440\\u0442\\u0443\\u044e \\u043b\\u0438\\u0448\\u0435 \\u0437\\u0456 Spotify: \\u043f\\u0456\\u0434\\u043a\\u043b\\u044e\\u0447\\u0438 \\u0441\\u0432\\u0456\\u0439 \\u0430\\u043a\\u0430\\u0443\\u043d\\u0442, \\u043f\\u043e\\u0442\\u0456\\u043c \\u0432\\u0438\\u043a\\u043b\\u0438\\u0447 \\u043c\\u0435\\u043d\\u0435 \\u0456\\u043d\\u043b\\u0430\\u0439\\u043d\\u043e\\u043c \\u0443 \\u0431\\u0443\\u0434\\u044c-\\u044f\\u043a\\u043e\\u043c\\u0443 \\u0447\\u0430\\u0442\\u0456 \\u0442\\u0430 \\u043e\\u0431\\u0435\\u0440\\u0438 \\u043d\\u0435\\u0449\\u043e\\u0434\\u0430\\u0432\\u043d\\u0456\\u0439 \\u0442\\u0440\\u0435\\u043a. \\u042f \\u0440\\u043e\\u0437\\u0431\\u0435\\u0440\\u0443\\u0441\\u044f \\u0437 \\u0430\\u0443\\u0434\\u0456\\u043e. \\ud83e\\udea9\\n\\n\\u0422\\u0435\\u043f\\u0435\\u0440 \\u044f \\u0442\\u0430\\u043a\\u043e\\u0436 \\u043f\\u0456\\u0434\\u0442\\u0440\\u0438\\u043c\\u0443\\u044e YouTube-\\u043f\\u043e\\u0441\\u0438\\u043b\\u0430\\u043d\\u043d\\u044f \\u0456\\u043d\\u043b\\u0430\\u0439\\u043d\\u043e\\u043c. \\u2728\\n\\n\\u041c\\u0430\\u043b\\u0435\\u043d\\u044c\\u043a\\u0438\\u0439 \\u0431\\u044e\\u0440\\u043e\\u043a\\u0440\\u0430\\u0442\\u0438\\u0447\\u043d\\u0438\\u0439 \\u0441\\u043a\\u0440\\u0456\\u043c\\u0435\\u0440: Spotify-\\u0437\\u0430\\u0441\\u0442\\u043e\\u0441\\u0443\\u043d\\u043e\\u043a \\u0443\\u0441\\u0435 \\u0449\\u0435 \\u0432 \\u0440\\u0435\\u0436\\u0438\\u043c\\u0456 \\u0440\\u043e\\u0437\\u0440\\u043e\\u0431\\u043a\\u0438, \\u0442\\u043e\\u0436 \\u044f\\u043a\\u0449\\u043e \\u0432\\u0445\\u0456\\u0434 \\u043f\\u043e\\u0432\\u043e\\u0434\\u0438\\u0442\\u044c\\u0441\\u044f \\u0430\\u043b\\u0435\\u0440\\u0433\\u0456\\u0447\\u043d\\u043e, \\u0441\\u043f\\u043e\\u0447\\u0430\\u0442\\u043a\\u0443 \\u043d\\u0430\\u043f\\u0438\\u0448\\u0438 @kyrylo0, \\u0456 \\u044f \\u0434\\u043e\\u0434\\u0430\\u043c \\u0442\\u0435\\u0431\\u0435 \\u0434\\u043e \\u0432\\u0430\\u0439\\u0442\\u043b\\u0456\\u0441\\u0442\\u0430. \\ud83e\\uddfe\\u2728";
+  return String(languageCode || "").toLowerCase().startsWith("uk") ? ukrainian : english;
+}
+`;
+
 replaceOnce(
-  '  const data = await res.json();\n  return (data.items || [])',
-  '  const data = await res.json();\n  if (String(telegramUserId) === "443036991") {\n    console.log("Spotify diagnostic recently played:", JSON.stringify((data.items || []).map((item) => ({ title: item.track?.name, artist: item.track?.artists?.map((artist) => artist.name).join(", "), playedAt: item.played_at }))));\n  }\n  return (data.items || [])',
-  "owner Spotify history diagnostic"
+  `      text: "Connect Spotify, then use me inline in any chat.",`,
+  `      text: getStartMessage(update.message.from.language_code),`,
+  "localized welcome message"
 );
+
+if (!source.includes("function getStartMessage(languageCode)")) {
+  const insertionPoint = "\nasync function handleUpdate(update)";
+  if (!source.includes(insertionPoint)) throw new Error("Could not insert localized welcome helper.");
+  source = source.replace(insertionPoint, `${localizedStartMessageHelper}${insertionPoint}`);
+  changed = true;
+}
 
 if (changed) {
   writeFileSync(indexPath, source);
