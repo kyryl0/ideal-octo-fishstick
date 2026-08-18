@@ -1,11 +1,9 @@
 import base64
 import json
-import os
 import sys
 from pathlib import Path
 
-from ytmusicapi import YTMusic
-from ytmusicapi.auth.oauth import OAuthCredentials, RefreshingToken
+from ytmusicapi import YTMusic, setup
 
 
 def emit(value):
@@ -16,48 +14,17 @@ def get_payload():
     return json.loads(base64.b64decode(sys.argv[2]).decode("utf-8"))
 
 
-def credentials(payload):
-    return OAuthCredentials(os.environ["YTMUSIC_CLIENT_ID"], os.environ["YTMUSIC_CLIENT_SECRET"])
-
-
-def start(payload):
-    return credentials(payload).get_code()
-
-
-def store_token(token_path, client, raw_token):
-    refresh_expires_in = raw_token.get("refresh_token_expires_in", raw_token["expires_in"])
-    token = RefreshingToken(
-        credentials=client,
-        access_token=raw_token["access_token"],
-        refresh_token=raw_token["refresh_token"],
-        scope=raw_token["scope"],
-        token_type=raw_token["token_type"],
-        expires_in=refresh_expires_in,
-    )
-    token.update(raw_token)
-    token_path.parent.mkdir(parents=True, exist_ok=True)
-    token.local_cache = token_path
-
-
-def complete(payload):
-    client = credentials(payload)
-    raw_token = client.token_from_code(payload["deviceCode"])
-    if raw_token.get("error"):
-        return {"state": raw_token["error"]}
-
+def configure(payload):
     token_path = Path(payload["tokenPath"])
-    store_token(token_path, client, raw_token)
+    token_path.parent.mkdir(parents=True, exist_ok=True)
+    token_path.write_text(setup(headers_raw=payload["headers"]), encoding="utf-8")
+    YTMusic(str(token_path)).get_account_info()
     return {"state": "connected"}
 
 
 def history(payload):
-    client = credentials(payload)
     token_path = Path(payload["tokenPath"])
-    raw_token = json.loads(token_path.read_text(encoding="utf-8"))
-    if "expires_at" not in raw_token:
-        store_token(token_path, client, raw_token)
-
-    music = YTMusic(str(token_path), oauth_credentials=client)
+    music = YTMusic(str(token_path))
     tracks = []
     for item in music.get_history()[: payload.get("limit", 10)]:
         artists = ", ".join(artist.get("name", "") for artist in item.get("artists", []) if artist.get("name"))
@@ -81,7 +48,7 @@ def history(payload):
 def main():
     action = sys.argv[1]
     payload = get_payload()
-    actions = {"start": start, "complete": complete, "history": history}
+    actions = {"configure": configure, "history": history}
     emit(actions[action](payload))
 
 
