@@ -7,18 +7,9 @@ let changed = false;
 function replaceOnce(before, after, label) {
   if (source.includes(after)) return;
   if (!source.includes(before)) {
-    throw new Error(`Could not apply YouTube inline patch. Missing ${label}.`);
+    throw new Error(`Could not apply YouTube patch. Missing ${label}.`);
   }
   source = source.replace(before, after);
-  changed = true;
-}
-
-function insertAfter(needle, insertion, label) {
-  if (source.includes(insertion)) return;
-  if (!source.includes(needle)) {
-    throw new Error(`Could not apply YouTube inline patch. Missing ${label}.`);
-  }
-  source = source.replace(needle, `${needle}${insertion}`);
   changed = true;
 }
 
@@ -28,28 +19,31 @@ function replacePatternOnce(pattern, replacement, label) {
   changed = true;
 }
 
+function insertAfter(needle, insertion, label) {
+  if (source.includes(insertion)) return;
+  if (!source.includes(needle)) {
+    throw new Error(`Could not apply YouTube patch. Missing ${label}.`);
+  }
+  source = source.replace(needle, `${needle}${insertion}`);
+  changed = true;
+}
+
 replacePatternOnce(
   /const AUDIO_PROVIDER = [^\n]+\nconst TELEGRAM_MEDIA_TYPE = [^\n]+\nconst SPOOTY_BASE_URL = [^\n]+\nconst SPOOTY_POLL_INTERVAL_MS = [^\n]+\nconst SPOOTY_POLL_TIMEOUT_MS = [^\n]+\nconst SPOOTY_AUDIO_EXTENSION = [^\n]+\n/,
   `const TELEGRAM_MEDIA_TYPE = process.env.TELEGRAM_MEDIA_TYPE || "audio";\n`,
-  "Spooty configuration constants"
-);
-
-replacePatternOnce(
-  /const YTCONVERTER_AUDIO_EXTENSION = [^\n]+/,
-  `const YTCONVERTER_AUDIO_EXTENSION = normalizeAudioExtension(process.env.YTCONVERTER_AUDIO_EXTENSION || "mp3");`,
-  "ytconverter audio extension"
+  "Spooty configuration"
 );
 
 replacePatternOnce(
   /if \(AUDIO_PROVIDER === "spooty" && !SPOOTY_BASE_URL\) errors\.push\("SPOOTY_BASE_URL"\);\n/,
   "",
-  "Spooty config validation"
+  "Spooty validation"
 );
 
 replacePatternOnce(
   /  if \(!SPOTIFY_CLIENT_ID\) errors\.push\("SPOTIFY_CLIENT_ID"\);\n  if \(!SPOTIFY_CLIENT_SECRET\) errors\.push\("SPOTIFY_CLIENT_SECRET"\);\n/,
-  `  if (!hasSpotifyConfiguration() && !hasYoutubeMusicConfiguration()) errors.push("Spotify or YouTube Music OAuth configuration");\n`,
-  "optional Spotify or YouTube Music configuration"
+  "",
+  "optional Spotify configuration"
 );
 
 replacePatternOnce(
@@ -57,7 +51,7 @@ replacePatternOnce(
   `async function resolveAudio(track) {
   return downloadYoutubeAudio(track);
 }`,
-  "single ytconverter audio provider"
+  "ytconverter audio provider"
 );
 
 replacePatternOnce(
@@ -73,7 +67,7 @@ replacePatternOnce(
 }
 
 async function serveAudioFile`,
-  "remove Spooty download implementation"
+  "Spooty downloader"
 );
 
 insertAfter(
@@ -90,102 +84,82 @@ insertAfter(
 
 insertAfter(
   `const TELEGRAM_MEDIA_TYPE = process.env.TELEGRAM_MEDIA_TYPE || "audio";`,
-  `\nconst YTCONVERTER_AUDIO_EXTENSION = normalizeAudioExtension(process.env.YTCONVERTER_AUDIO_EXTENSION || "mp3");\nconst YTCONVERTER_AUDIO_QUALITY = String(process.env.YTCONVERTER_AUDIO_QUALITY || "192");\nconst YTMUSIC_CLIENT_ID = process.env.YTMUSIC_CLIENT_ID || "";\nconst YTMUSIC_CLIENT_SECRET = process.env.YTMUSIC_CLIENT_SECRET || "";`,
-  "ytconverter audio config"
-);
-
-insertAfter(
-  `const TOKEN_PATH = join(DATA_DIR, "spotify-tokens.json");`,
-  `\nconst YTMUSIC_TOKEN_DIR = join(DATA_DIR, "ytmusic-oauth");\nconst MUSIC_SOURCE_PATH = join(DATA_DIR, "music-sources.json");`,
-  "YouTube Music data paths"
-);
-
-insertAfter(
-  `const spotifyTokens = loadJson(TOKEN_PATH, {});`,
-  `\nconst musicSources = loadJson(MUSIC_SOURCE_PATH, {});`,
-  "music source storage"
+  `\nconst YTCONVERTER_AUDIO_EXTENSION = normalizeAudioExtension(process.env.YTCONVERTER_AUDIO_EXTENSION || "mp3");\nconst YTCONVERTER_AUDIO_QUALITY = String(process.env.YTCONVERTER_AUDIO_QUALITY || "192");`,
+  "ytconverter configuration"
 );
 
 insertAfter(
   `const jobs = new Map();`,
-  `\nconst execFileAsync = promisify(execFile);\nconst ytmusicLoginStates = new Map();`,
-  "execFileAsync helper"
+  `\nconst execFileAsync = promisify(execFile);\nconst songLinkLookups = new Map();`,
+  "metadata lookup cache"
 );
 
 replaceOnce(
-  `    if (url.pathname === "/spotify/login") {`,
-  `    if (url.pathname === "/ytmusic/connect") {\n      await handleYoutubeMusicConnect(url, res);\n      return;\n    }\n\n    if (url.pathname === "/ytmusic/status") {\n      await handleYoutubeMusicStatus(url, res);\n      return;\n    }\n\n    if (url.pathname === "/spotify/login") {`,
-  "YouTube Music OAuth routes"
+  `  if (update.message?.text === "/start") {\n    const loginUrl = makeLoginUrl(update.message.from.id);\n    await telegram("sendMessage", {\n      chat_id: update.message.chat.id,\n      text: "Connect Spotify, then use me inline in any chat.",\n      reply_markup: {\n        inline_keyboard: [[{ text: "Connect Spotify", url: loginUrl }]]\n      }\n    });\n  }`,
+  `  if (update.message?.text === "/start") {\n    const canConnectSpotify = Boolean(SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET);\n    await telegram("sendMessage", {\n      chat_id: update.message.chat.id,\n      text: canConnectSpotify ? "Connect Spotify for recent tracks, or paste a YouTube link inline." : "Paste a YouTube link inline to fetch audio.",\n      reply_markup: canConnectSpotify ? { inline_keyboard: [[{ text: "Connect Spotify", url: makeLoginUrl(update.message.from.id) }]] } : undefined\n    });\n  }`,
+  "start message"
 );
-
-replaceOnce(
-  `    if (url.pathname === "/ytmusic/connect") {\n      await handleYoutubeMusicConnect(url, res);\n      return;\n    }\n\n    if (url.pathname === "/ytmusic/status") {\n      await handleYoutubeMusicStatus(url, res);\n      return;\n    }\n\n    if (url.pathname === "/spotify/login") {`,
-  `    if (url.pathname === "/ytmusic/connect") {\n      await handleYoutubeMusicBrowserConnect(req, url, res);\n      return;\n    }\n\n    if (url.pathname === "/spotify/login") {`,
-  "YouTube Music browser-auth route"
-);
-
-replaceOnce(
-  `  if (update.callback_query) {\n    await telegram("answerCallbackQuery", {\n      callback_query_id: update.callback_query.id,\n      text: "Still preparing the audio..."\n    });\n    return;\n  }`,
-  `  if (update.callback_query) {\n    await handleCallbackQuery(update.callback_query);\n    return;\n  }`,
-  "music source callbacks"
-);
-
-if (!source.includes("await sendStartMessage(update.message);")) {
-  replacePatternOnce(
-    /  if \(update\.message\?\.text === "\/start"\) \{[\s\S]*?\n  \}/,
-    `  if (update.message?.text === "/start") {\n    await sendStartMessage(update.message);\n  }`,
-    "music source start message"
-  );
-}
 
 replaceOnce(
   `async function handleInlineQuery(query) {\n  const telegramUserId = String(query.from.id);\n\n  if (!spotifyTokens[telegramUserId]) {`,
-  `async function handleInlineQuery(query) {\n  const telegramUserId = String(query.from.id);\n  const youtubeTrack = await getYoutubeInlineTrack(query.query);\n\n  if (youtubeTrack) {\n    await answerWithYoutubeResult(query.id, telegramUserId, youtubeTrack);\n    return;\n  }\n\n  if (!spotifyTokens[telegramUserId]) {`,
+  `async function handleInlineQuery(query) {\n  const telegramUserId = String(query.from.id);\n  const youtubeTrack = await getYoutubeInlineTrack(query.query);\n\n  if (youtubeTrack) {\n    await answerWithYoutubeResult(query.id, telegramUserId, await enrichTrackWithSongLink(youtubeTrack));\n    return;\n  }\n\n  if (!spotifyTokens[telegramUserId]) {`,
   "inline YouTube branch"
 );
 
 replaceOnce(
-  `  if (youtubeTrack) {\n    await answerWithYoutubeResult(query.id, telegramUserId, youtubeTrack);\n    return;\n  }\n\n  if (!spotifyTokens[telegramUserId]) {`,
-  `  if (youtubeTrack) {\n    await answerWithYoutubeResult(query.id, telegramUserId, youtubeTrack);\n    return;\n  }\n\n  if (getMusicSource(telegramUserId) === "ytmusic") {\n    if (!hasYoutubeMusicToken(telegramUserId)) {\n      await answerWithYoutubeMusicConnectResult(query.id, telegramUserId);\n      return;\n    }\n\n    try {\n      const tracks = await getYoutubeMusicHistory(telegramUserId);\n      await answerWithMusicTracks(query.id, telegramUserId, tracks);\n    } catch (err) {\n      console.error("YouTube Music history failed:", err);\n      await answerWithYoutubeMusicConnectResult(query.id, telegramUserId, "Reconnect YouTube Music");\n    }\n    return;\n  }\n\n  if (!spotifyTokens[telegramUserId]) {`,
-  "YouTube Music inline history"
+  `    tracks = await getRecentlyPlayed(telegramUserId);`,
+  `    tracks = await Promise.all((await getRecentlyPlayed(telegramUserId)).map(enrichTrackWithSongLink));`,
+  "Song.link Spotify enrichment"
 );
 
 replaceOnce(
   `async function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {`,
-  `async function answerWithYoutubeResult(inlineQueryId, telegramUserId, track) {\n  const resultId = makeYoutubeResultId(telegramUserId, track);\n  chosenTracks.set(resultId, track);\n\n  await telegram("answerInlineQuery", {\n    inline_query_id: inlineQueryId,\n    results: [{\n      type: "article",\n      id: resultId,\n      title: track.title,\n      description: "YouTube link - tap to fetch audio",\n      thumbnail_url: track.artwork,\n      input_message_content: {\n        message_text: "Preparing audio for:\\n" + track.title + "\\n" + track.artist\n      },\n      reply_markup: {\n        inline_keyboard: [[{ text: "Loading audio...", callback_data: "loading" }]]\n      }\n    }],\n    cache_time: 0,\n    is_personal: true\n  });\n}\n\nasync function answerWithYoutubeMusicConnectResult(inlineQueryId, telegramUserId, title = "Connect YouTube Music") {\n  await telegram("answerInlineQuery", {\n    inline_query_id: inlineQueryId,\n    results: [{\n      type: "article",\n      id: "ytmusic-connect",\n      title,\n      description: "Connect your YouTube Music history",\n      input_message_content: { message_text: "Connect YouTube Music, then try again." },\n      reply_markup: {\n        inline_keyboard: [[{ text: "Connect YouTube Music", url: makeYoutubeMusicLoginUrl(telegramUserId) }]]\n      }\n    }],\n    cache_time: 1,\n    is_personal: true\n  });\n}\n\nasync function answerWithMusicTracks(inlineQueryId, telegramUserId, tracks) {\n  if (!tracks.length) {\n    await telegram("answerInlineQuery", {\n      inline_query_id: inlineQueryId,\n      results: [{ type: "article", id: "no-ytmusic-history", title: "No YouTube Music history", description: "Play something in YouTube Music, then try again.", input_message_content: { message_text: "No YouTube Music history found." } }],\n      cache_time: 1,\n      is_personal: true\n    });\n    return;\n  }\n\n  const results = tracks.map((track, index) => {\n    const resultId = makeResultId(telegramUserId, track, index);\n    chosenTracks.set(resultId, track);\n    return {\n      type: "article",\n      id: resultId,\n      title: track.title,\n      description: track.artist + " - " + track.album,\n      thumbnail_url: track.artwork,\n      input_message_content: { message_text: "Preparing audio for:\\n" + track.title + "\\n" + track.artist },\n      reply_markup: { inline_keyboard: [[{ text: "Loading audio...", callback_data: "loading" }]] }\n    };\n  });\n\n  await telegram("answerInlineQuery", { inline_query_id: inlineQueryId, results, cache_time: 0, is_personal: true });\n}\n\nasync function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {`,
-  "YouTube and YouTube Music inline result helpers"
+  `async function answerWithYoutubeResult(inlineQueryId, telegramUserId, track) {\n  const resultId = makeYoutubeResultId(telegramUserId, track);\n  chosenTracks.set(resultId, track);\n\n  await telegram("answerInlineQuery", {\n    inline_query_id: inlineQueryId,\n    results: [{\n      type: "article",\n      id: resultId,\n      title: track.title,\n      description: track.artist + " - " + track.album,\n      thumbnail_url: track.artwork,\n      input_message_content: { message_text: "Preparing audio for:\\n" + track.title + "\\n" + track.artist },\n      reply_markup: { inline_keyboard: [[{ text: "Loading audio...", callback_data: "loading" }]] }\n    }],\n    cache_time: 0,\n    is_personal: true\n  });\n}\n\nasync function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {`,
+  "YouTube inline result"
 );
 
-replaceOnce(
-  `description: "Connect your YouTube Music history"`,
-  `description: "Connect from a desktop browser"`,
-  "YouTube Music browser-auth inline copy"
-);
+replacePatternOnce(
+  /async function resolveSongLinks\(track\) \{[\s\S]*?\n\}\n\nfunction buildAudioCaption\(spotifyTrack, audio, links\) \{[\s\S]*?\n\}/,
+  `async function resolveSongLinks(track) {
+  const enriched = await enrichTrackWithSongLink(track);
+  const spotify = enriched.spotifyUrl || makeSpotifySearchUrl(enriched.title, enriched.artist);
+  return {
+    spotify,
+    appleMusic: enriched.appleMusicUrl,
+    youtubeMusic: enriched.youtubeUrl,
+    songLink: enriched.songLinkUrl,
+    other: enriched.songLinkUrl || spotify
+  };
+}
 
-replaceOnce(
-  `async function resolveSongLinks(track) {\n  const fallbackOther = track.spotifyId ? ` + "`https://song.link/s/${track.spotifyId}`" + ` : track.spotifyUrl;`,
-  `async function resolveSongLinks(track) {\n  if (track.youtubeUrl) {\n    return {\n      spotify: undefined,\n      appleMusic: undefined,\n      youtubeMusic: track.youtubeUrl,\n      other: track.youtubeUrl\n    };\n  }\n\n  const fallbackOther = track.spotifyId ? ` + "`https://song.link/s/${track.spotifyId}`" + ` : track.spotifyUrl;`,
-  "YouTube song links"
+function buildAudioCaption(track, audio, links) {
+  const linkParts = [
+    links.songLink ? makeHtmlLink("Song.link", links.songLink) : undefined,
+    links.spotify ? makeHtmlLink("Spotify", links.spotify) : undefined,
+    links.appleMusic ? makeHtmlLink("Apple Music", links.appleMusic) : undefined,
+    links.youtubeMusic ? makeHtmlLink("YouTube Music", links.youtubeMusic) : undefined
+  ].filter(Boolean);
+
+  return [
+    escapeHtml(track.title) + " - " + escapeHtml(track.artist),
+    audio.credit ? "Audio: " + escapeHtml(audio.credit) : undefined,
+    linkParts.length ? "Listen: " + linkParts.join(" | ") : undefined
+  ].filter(Boolean).join("\\n");
+}`,
+  "Song.link caption and links"
 );
 
 const helper = `
 async function downloadYoutubeAudio(track) {
   const sourceUrl = track.youtubeUrl || "ytsearch1:" + track.title + " " + track.artist;
-
   const fileBase = makeAudioFileBase(track, sourceUrl);
   const cachedFileName = findCachedAudioFile(fileBase);
 
-  if (cachedFileName) {
-    return buildLocalAudioResult(track, cachedFileName);
-  }
+  if (cachedFileName) return buildLocalAudioResult(track, cachedFileName);
 
-  await runYtConverterDownload(sourceUrl, AUDIO_DIR, fileBase);
-
+  await runYtConverterDownload(sourceUrl, AUDIO_DIR, fileBase, track);
   const downloadedFileName = findCachedAudioFile(fileBase);
-  if (!downloadedFileName) {
-    throw new Error("ytconverter finished without producing an audio file.");
-  }
-
+  if (!downloadedFileName) throw new Error("ytconverter finished without producing an audio file.");
   return buildLocalAudioResult(track, downloadedFileName);
 }
 
@@ -194,13 +168,17 @@ function makeAudioFileBase(track, sourceUrl) {
   return safeSegment(label || track.youtubeId || createHash("sha256").update(sourceUrl).digest("hex"));
 }
 
-async function runYtConverterDownload(sourceUrl, outputDir, fileBase) {
+async function runYtConverterDownload(sourceUrl, outputDir, fileBase, track) {
   const payload = Buffer.from(JSON.stringify({
     url: sourceUrl,
     outputDir,
     fileBase,
     audioFormat: YTCONVERTER_AUDIO_EXTENSION,
-    audioQuality: YTCONVERTER_AUDIO_QUALITY
+    audioQuality: YTCONVERTER_AUDIO_QUALITY,
+    artworkUrl: track.artwork,
+    title: track.title,
+    artist: track.artist,
+    album: track.album
   })).toString("base64");
 
   const script = \`
@@ -209,7 +187,9 @@ import builtins
 import json
 import os
 import re
+import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
 payload = json.loads(base64.b64decode(sys.argv[1]).decode("utf-8"))
@@ -268,7 +248,32 @@ if not created:
     raise SystemExit("ytconverter did not create an audio file")
 
 created.sort(key=lambda path: path.stat().st_mtime, reverse=True)
-created[0].rename(output_dir / (payload["fileBase"] + ".mp3"))
+audio_path = created[0]
+try:
+    artwork_path = None
+    if payload.get("artworkUrl"):
+        artwork_path = output_dir / ".song-cover.jpg"
+        request = urllib.request.Request(payload["artworkUrl"], headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(request, timeout=20) as response:
+            artwork_path.write_bytes(response.read())
+
+    remuxed = output_dir / ".metadata.mp3"
+    command = ["ffmpeg", "-y", "-i", str(audio_path)]
+    if artwork_path and artwork_path.exists():
+        command += ["-i", str(artwork_path), "-map", "0:a:0", "-map", "1:v:0", "-c:v", "mjpeg", "-disposition:v:0", "attached_pic"]
+    else:
+        command += ["-map", "0:a:0"]
+    command += ["-c:a", "copy", "-id3v2_version", "3"]
+    for name in ("title", "artist", "album"):
+        if payload.get(name):
+            command += ["-metadata", name + "=" + str(payload[name])]
+    command += [str(remuxed)]
+    subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    remuxed.replace(audio_path)
+except Exception as error:
+    print("Could not apply canonical metadata: " + str(error), file=sys.stderr)
+
+audio_path.rename(output_dir / (payload["fileBase"] + ".mp3"))
 \`;
 
   const errors = [];
@@ -281,12 +286,10 @@ created[0].rename(output_dir / (payload["fileBase"] + ".mp3"))
       });
       return;
     } catch (err) {
-      const detail = String(err.stderr || err.message);
-      errors.push(\`\${command}: \${detail.slice(-1200)}\`);
+      errors.push(command + ": " + String(err.stderr || err.message).slice(-1200));
     }
   }
-
-  throw new Error(\`ytconverter download failed: \${errors.join("; ").slice(-1200)}\`);
+  throw new Error("ytconverter download failed: " + errors.join("; ").slice(-1200));
 }
 
 async function getYoutubeInlineTrack(queryText) {
@@ -294,21 +297,61 @@ async function getYoutubeInlineTrack(queryText) {
   if (!youtubeUrl) return undefined;
 
   const youtubeId = getYoutubeVideoId(youtubeUrl);
-  const normalizedUrl = youtubeId ? \`https://music.youtube.com/watch?v=\${youtubeId}\` : youtubeUrl;
+  const normalizedUrl = youtubeId ? "https://music.youtube.com/watch?v=" + youtubeId : youtubeUrl;
   const title = await getYoutubeTitle(normalizedUrl);
-
   return {
     source: "youtube",
     youtubeId,
     youtubeUrl: normalizedUrl,
-    spotifyId: youtubeId ? \`yt:\${youtubeId}\` : undefined,
     title,
     artist: "YouTube",
     album: "Direct link",
-    artwork: youtubeId ? \`https://img.youtube.com/vi/\${youtubeId}/mqdefault.jpg\` : undefined,
-    playedAt: new Date().toISOString(),
-    spotifyUrl: undefined
+    artwork: youtubeId ? "https://img.youtube.com/vi/" + youtubeId + "/mqdefault.jpg" : undefined,
+    playedAt: new Date().toISOString()
   };
+}
+
+async function enrichTrackWithSongLink(track) {
+  const lookupUrl = track.spotifyUrl || track.youtubeUrl;
+  if (!lookupUrl) return { ...track, spotifyUrl: makeSpotifySearchUrl(track.title, track.artist) };
+
+  try {
+    const data = await getSongLinkLookup(lookupUrl);
+    const entity = data.entitiesByUniqueId?.[data.entityUniqueId] || {};
+    const title = entity.title || track.title;
+    const artist = entity.artistName || track.artist;
+    return {
+      ...track,
+      title,
+      artist,
+      album: entity.albumName || track.album,
+      artwork: entity.thumbnailUrl || track.artwork,
+      spotifyUrl: data.linksByPlatform?.spotify?.url || track.spotifyUrl || makeSpotifySearchUrl(title, artist),
+      appleMusicUrl: data.linksByPlatform?.appleMusic?.url,
+      songLinkUrl: data.pageUrl
+    };
+  } catch (err) {
+    console.error("Song.link metadata lookup failed:", err);
+    return { ...track, spotifyUrl: track.spotifyUrl || makeSpotifySearchUrl(track.title, track.artist) };
+  }
+}
+
+async function getSongLinkLookup(url) {
+  if (!songLinkLookups.has(url)) {
+    songLinkLookups.set(url, (async () => {
+      const apiUrl = new URL("https://api.song.link/v1-alpha.1/links");
+      apiUrl.searchParams.set("url", url);
+      if (SONGLINK_API_KEY) apiUrl.searchParams.set("key", SONGLINK_API_KEY);
+      const res = await fetch(apiUrl);
+      if (!res.ok) throw new Error("Song.link failed: " + res.status);
+      return res.json();
+    })());
+  }
+  return songLinkLookups.get(url);
+}
+
+function makeSpotifySearchUrl(title, artist) {
+  return "https://open.spotify.com/search/" + encodeURIComponent([title, artist].filter(Boolean).join(" "));
 }
 
 function makeYoutubeResultId(telegramUserId, track) {
@@ -318,16 +361,12 @@ function makeYoutubeResultId(telegramUserId, track) {
 
 function extractYoutubeUrl(queryText) {
   const text = String(queryText || "").trim();
-  if (!text) return undefined;
-
   const match = text.match(/(?:https?:\\/\\/)?(?:www\\.|m\\.)?(?:youtube\\.com|music\\.youtube\\.com|youtu\\.be)\\/[^\\s<>]+/i);
   if (!match) return undefined;
-
-  const raw = match[0].startsWith("http") ? match[0] : \`https://\${match[0]}\`;
+  const raw = match[0].startsWith("http") ? match[0] : "https://" + match[0];
   try {
     const url = new URL(raw);
-    if (!isYoutubeHost(url.hostname)) return undefined;
-    return url.toString();
+    return isYoutubeHost(url.hostname) ? url.toString() : undefined;
   } catch {
     return undefined;
   }
@@ -341,18 +380,13 @@ function isYoutubeHost(hostname) {
 function getYoutubeVideoId(youtubeUrl) {
   try {
     const url = new URL(youtubeUrl);
-    if (url.hostname.toLowerCase() === "youtu.be") {
-      return url.pathname.split("/").filter(Boolean)[0];
-    }
-    if (url.pathname === "/watch") {
-      return url.searchParams.get("v") || undefined;
-    }
+    if (url.hostname.toLowerCase() === "youtu.be") return url.pathname.split("/").filter(Boolean)[0];
+    if (url.pathname === "/watch") return url.searchParams.get("v") || undefined;
     const parts = url.pathname.split("/").filter(Boolean);
-    if (["shorts", "embed", "live"].includes(parts[0])) return parts[1];
+    return ["shorts", "embed", "live"].includes(parts[0]) ? parts[1] : undefined;
   } catch {
     return undefined;
   }
-  return undefined;
 }
 
 async function getYoutubeTitle(youtubeUrl) {
@@ -360,12 +394,9 @@ async function getYoutubeTitle(youtubeUrl) {
     const url = new URL("https://www.youtube.com/oembed");
     url.searchParams.set("url", youtubeUrl);
     url.searchParams.set("format", "json");
-
     const res = await fetch(url);
-    if (!res.ok) throw new Error(\`YouTube oEmbed failed: \${res.status}\`);
-
-    const data = await res.json();
-    return data.title || "YouTube audio";
+    if (!res.ok) throw new Error("YouTube oEmbed failed: " + res.status);
+    return (await res.json()).title || "YouTube audio";
   } catch (err) {
     console.error("YouTube title lookup failed:", err);
     return "YouTube audio";
@@ -377,278 +408,14 @@ function getPythonCommands() {
 }
 `;
 
-const ytmusicHelper = `
-async function sendStartMessage(message) {
-  const buttons = [];
-  if (hasSpotifyConfiguration()) buttons.push([{ text: "Connect Spotify", url: makeLoginUrl(message.from.id) }]);
-  if (hasYoutubeMusicConfiguration()) buttons.push([{ text: "Connect YouTube Music", url: makeYoutubeMusicLoginUrl(message.from.id) }]);
-  buttons.push([
-    { text: "Use Spotify", callback_data: "source:spotify" },
-    { text: "Use YouTube Music", callback_data: "source:ytmusic" }
-  ]);
-
-  await telegram("sendMessage", {
-    chat_id: message.chat.id,
-    text: "Choose a music service, then use me inline.",
-    reply_markup: { inline_keyboard: buttons }
-  });
-}
-
-async function handleCallbackQuery(query) {
-  const source = String(query.data || "").replace("source:", "");
-  if (source === "spotify" || source === "ytmusic") {
-    musicSources[String(query.from.id)] = source;
-    saveMusicSources();
-    await telegram("answerCallbackQuery", {
-      callback_query_id: query.id,
-      text: source === "ytmusic" ? "YouTube Music selected" : "Spotify selected"
-    });
-    return;
-  }
-
-  await telegram("answerCallbackQuery", {
-    callback_query_id: query.id,
-    text: "Still preparing the audio..."
-  });
-}
-
-function hasSpotifyConfiguration() {
-  return Boolean(SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET);
-}
-
-function hasYoutubeMusicConfiguration() {
-  return Boolean(YTMUSIC_CLIENT_ID && YTMUSIC_CLIENT_SECRET);
-}
-
-function getMusicSource(telegramUserId) {
-  return musicSources[telegramUserId] || (hasSpotifyConfiguration() ? "spotify" : "ytmusic");
-}
-
-function saveMusicSources() {
-  writeFileSync(MUSIC_SOURCE_PATH, JSON.stringify(musicSources, null, 2));
-}
-
-function makeYoutubeMusicLoginUrl(telegramUserId) {
-  const url = new URL(PUBLIC_BASE_URL + "/ytmusic/connect");
-  url.searchParams.set("telegram_user_id", String(telegramUserId));
-  return url.toString();
-}
-
-function getYoutubeMusicTokenPath(telegramUserId) {
-  return join(YTMUSIC_TOKEN_DIR, String(telegramUserId), "oauth.json");
-}
-
-function hasYoutubeMusicToken(telegramUserId) {
-  return existsSync(getYoutubeMusicTokenPath(telegramUserId));
-}
-
-async function handleYoutubeMusicConnect(url, res) {
-  const telegramUserId = url.searchParams.get("telegram_user_id");
-  if (!telegramUserId || !/^\\d+$/.test(telegramUserId)) {
-    sendText(res, 400, "missing telegram_user_id");
-    return;
-  }
-  if (!hasYoutubeMusicConfiguration()) {
-    sendText(res, 503, "YouTube Music is not configured.");
-    return;
-  }
-
-  const authorization = await runYoutubeMusicBridge("start", {});
-  if (!authorization.device_code || !authorization.user_code) {
-    throw new Error("YouTube Music did not return a device authorization code.");
-  }
-
-  const state = randomBytes(24).toString("hex");
-  ytmusicLoginStates.set(state, {
-    telegramUserId,
-    deviceCode: authorization.device_code,
-    expiresAt: Date.now() + Number(authorization.expires_in || 1800) * 1000
-  });
-
-  const verificationUrl = new URL(authorization.verification_url || authorization.verification_uri || "https://www.google.com/device");
-  verificationUrl.searchParams.set("user_code", authorization.user_code);
-  const statusUrl = new URL(PUBLIC_BASE_URL + "/ytmusic/status");
-  statusUrl.searchParams.set("state", state);
-  sendHtml(res, 200, "<h1>Connect YouTube Music</h1><p><a href='" + escapeHtml(verificationUrl.toString()) + "'>Open Google and continue</a></p><p>Code: <strong>" + escapeHtml(authorization.user_code) + "</strong></p><p>This page will finish automatically after approval.</p><meta http-equiv='refresh' content='4; url=" + escapeHtml(statusUrl.toString()) + "'>");
-}
-
-async function handleYoutubeMusicStatus(url, res) {
-  const state = url.searchParams.get("state");
-  const pending = state ? ytmusicLoginStates.get(state) : undefined;
-  if (!pending || pending.expiresAt < Date.now()) {
-    if (state) ytmusicLoginStates.delete(state);
-    sendText(res, 400, "YouTube Music connection expired. Return to Telegram and start again.");
-    return;
-  }
-
-  const result = await runYoutubeMusicBridge("complete", {
-    deviceCode: pending.deviceCode,
-    tokenPath: getYoutubeMusicTokenPath(pending.telegramUserId)
-  });
-  if (result.state === "connected") {
-    ytmusicLoginStates.delete(state);
-    sendHtml(res, 200, "<h1>YouTube Music connected</h1><p>Return to Telegram and use the bot inline.</p>");
-    return;
-  }
-  if (result.state === "authorization_pending" || result.state === "slow_down") {
-    const statusUrl = new URL(PUBLIC_BASE_URL + "/ytmusic/status");
-    statusUrl.searchParams.set("state", state);
-    sendHtml(res, 200, "<h1>Waiting for Google approval</h1><p>Finish the approval in the Google page, then this page will continue automatically.</p><meta http-equiv='refresh' content='4; url=" + escapeHtml(statusUrl.toString()) + "'>");
-    return;
-  }
-
-  ytmusicLoginStates.delete(state);
-  throw new Error("YouTube Music connection failed: " + (result.state || "unknown error"));
-}
-
-async function getYoutubeMusicHistory(telegramUserId) {
-  const result = await runYoutubeMusicBridge("history", {
-    tokenPath: getYoutubeMusicTokenPath(telegramUserId),
-    limit: 10
-  });
-  return (result.tracks || []).map((track, index) => ({
-    ...track,
-    source: "ytmusic",
-    spotifyId: "yt:" + (track.youtubeId || index),
-    spotifyUrl: undefined,
-    playedAt: new Date(Date.now() - index * 1000).toISOString()
-  }));
-}
-
-async function runYoutubeMusicBridge(action, payload) {
-  const argument = Buffer.from(JSON.stringify(payload)).toString("base64");
-  const bridgePath = new URL("./ytmusic-bridge.py", import.meta.url).pathname;
-  let lastError;
-
-  for (const command of getPythonCommands()) {
-    try {
-      const { stdout } = await execFileAsync(command, [bridgePath, action, argument], {
-        maxBuffer: 1024 * 1024,
-        timeout: 30000,
-        windowsHide: true
-      });
-      const result = JSON.parse(stdout.trim());
-      if (result.error) throw new Error(result.error);
-      return result;
-    } catch (err) {
-      const output = String(err.stdout || "").trim();
-      if (output) {
-        try {
-          const result = JSON.parse(output);
-          if (result.error) throw new Error(result.error);
-          return result;
-        } catch (parseError) {
-          lastError = parseError;
-          continue;
-        }
-      }
-      lastError = err;
-    }
-  }
-
-  throw lastError || new Error("YouTube Music helper could not start.");
-}
-`;
-
-const ytmusicBrowserHelper = `
-async function handleYoutubeMusicBrowserConnect(req, url, res) {
-  const telegramUserId = url.searchParams.get("telegram_user_id");
-  if (req.method === "GET") {
-    if (!telegramUserId || !/^\\d+$/.test(telegramUserId)) {
-      sendText(res, 400, "missing telegram_user_id");
-      return;
-    }
-
-    const state = randomBytes(24).toString("hex");
-    ytmusicLoginStates.set(state, { telegramUserId, expiresAt: Date.now() + 15 * 60 * 1000 });
-    const actionUrl = new URL(PUBLIC_BASE_URL + "/ytmusic/connect");
-    actionUrl.searchParams.set("state", state);
-    sendHtml(res, 200, "<h1>Connect YouTube Music</h1><p>On a desktop browser, open YouTube Music while signed in. In Developer Tools, copy request headers from an authenticated <code>/browse</code> request and paste them below.</p><form method='post' action='" + escapeHtml(actionUrl.toString()) + "'><textarea name='headers' required autocomplete='off' spellcheck='false' style='width:100%;min-height:16rem'></textarea><p><button type='submit'>Connect</button></p></form>");
-    return;
-  }
-
-  if (req.method !== "POST") {
-    sendText(res, 405, "method not allowed");
-    return;
-  }
-
-  const state = url.searchParams.get("state");
-  const pending = state ? ytmusicLoginStates.get(state) : undefined;
-  if (!pending || pending.expiresAt < Date.now()) {
-    if (state) ytmusicLoginStates.delete(state);
-    sendText(res, 400, "YouTube Music connection expired. Return to Telegram and start again.");
-    return;
-  }
-
-  const form = new URLSearchParams(await readYoutubeMusicHeaders(req));
-  const headers = form.get("headers");
-  if (!headers) {
-    sendText(res, 400, "missing request headers");
-    return;
-  }
-
-  await runYoutubeMusicBridge("configure", {
-    tokenPath: getYoutubeMusicTokenPath(pending.telegramUserId),
-    headers
-  });
-  ytmusicLoginStates.delete(state);
-  sendHtml(res, 200, "<h1>YouTube Music connected</h1><p>Return to Telegram and use the bot inline.</p>");
-}
-
-async function readYoutubeMusicHeaders(req) {
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > 64 * 1024) throw new Error("YouTube Music headers are too large.");
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks).toString("utf8");
-}
-`;
-
 if (!source.includes("async function downloadYoutubeAudio(track)")) {
   const insertionPoint = "\nasync function answerWithYoutubeResult";
-  if (!source.includes(insertionPoint)) {
-    throw new Error("Could not insert YouTube download helpers.");
-  }
+  if (!source.includes(insertionPoint)) throw new Error("Could not insert YouTube helpers.");
   source = source.replace(insertionPoint, `${helper}${insertionPoint}`);
-  changed = true;
-}
-
-if (!source.includes("async function getYoutubeMusicHistory(telegramUserId)")) {
-  const insertionPoint = "\nasync function getRecentlyPlayed(telegramUserId)";
-  if (!source.includes(insertionPoint)) {
-    throw new Error("Could not insert YouTube Music helpers.");
-  }
-  source = source.replace(insertionPoint, `${ytmusicHelper}${insertionPoint}`);
-  changed = true;
-}
-
-if (source.includes("async function getYoutubeMusicHistory(telegramUserId)")) {
-  replaceOnce(
-    `function hasYoutubeMusicConfiguration() {\n  return Boolean(YTMUSIC_CLIENT_ID && YTMUSIC_CLIENT_SECRET);\n}`,
-    `function hasYoutubeMusicConfiguration() {\n  return true;\n}`,
-    "YouTube Music browser-auth configuration"
-  );
-  replaceOnce(
-    `function getYoutubeMusicTokenPath(telegramUserId) {\n  return join(YTMUSIC_TOKEN_DIR, String(telegramUserId), "oauth.json");\n}`,
-    `function getYoutubeMusicTokenPath(telegramUserId) {\n  return join(YTMUSIC_TOKEN_DIR, String(telegramUserId), "browser.json");\n}`,
-    "YouTube Music browser-auth token path"
-  );
-}
-
-if (!source.includes("async function readYoutubeMusicHeaders(req)")) {
-  const insertionPoint = "\nasync function getRecentlyPlayed(telegramUserId)";
-  if (!source.includes(insertionPoint)) {
-    throw new Error("Could not insert YouTube Music browser-auth helpers.");
-  }
-  source = source.replace(insertionPoint, `${ytmusicBrowserHelper}${insertionPoint}`);
   changed = true;
 }
 
 if (changed) {
   writeFileSync(indexPath, source);
-  console.log("Applied YouTube inline support with ytconverter audio downloads.");
+  console.log("Applied Spotify metadata and YouTube audio support.");
 }
-
