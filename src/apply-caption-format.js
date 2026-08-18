@@ -59,6 +59,7 @@ async function getCurrentTrack(telegramUserId) {
     artist: data.item.artists?.map((artist) => artist.name).join(", ") || "Unknown artist",
     album: data.item.album?.name || "Unknown album",
     artwork: data.item.album?.images?.[0]?.url || data.item.album?.images?.at(-1)?.url,
+    inlineArtwork: data.item.album?.images?.[1]?.url || data.item.album?.images?.at(-1)?.url || data.item.album?.images?.[0]?.url,
     playedAt: new Date().toISOString(),
     spotifyUrl: data.item.external_urls?.spotify
   };
