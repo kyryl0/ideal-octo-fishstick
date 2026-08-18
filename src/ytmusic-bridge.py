@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from ytmusicapi import YTMusic
-from ytmusicapi.auth.oauth import OAuthCredentials
+from ytmusicapi.auth.oauth import OAuthCredentials, RefreshingToken
 
 
 def emit(value):
@@ -24,20 +24,40 @@ def start(payload):
     return credentials(payload).get_code()
 
 
+def store_token(token_path, client, raw_token):
+    refresh_expires_in = raw_token.get("refresh_token_expires_in", raw_token["expires_in"])
+    token = RefreshingToken(
+        credentials=client,
+        access_token=raw_token["access_token"],
+        refresh_token=raw_token["refresh_token"],
+        scope=raw_token["scope"],
+        token_type=raw_token["token_type"],
+        expires_in=refresh_expires_in,
+    )
+    token.update(raw_token)
+    token_path.parent.mkdir(parents=True, exist_ok=True)
+    token.local_cache = token_path
+
+
 def complete(payload):
-    token = credentials(payload).token_from_code(payload["deviceCode"])
-    if token.get("error"):
-        return {"state": token["error"]}
+    client = credentials(payload)
+    raw_token = client.token_from_code(payload["deviceCode"])
+    if raw_token.get("error"):
+        return {"state": raw_token["error"]}
 
     token_path = Path(payload["tokenPath"])
-    token_path.parent.mkdir(parents=True, exist_ok=True)
-    token_path.write_text(json.dumps(token), encoding="utf-8")
+    store_token(token_path, client, raw_token)
     return {"state": "connected"}
 
 
 def history(payload):
     client = credentials(payload)
-    music = YTMusic(payload["tokenPath"], oauth_credentials=client)
+    token_path = Path(payload["tokenPath"])
+    raw_token = json.loads(token_path.read_text(encoding="utf-8"))
+    if "expires_at" not in raw_token:
+        store_token(token_path, client, raw_token)
+
+    music = YTMusic(str(token_path), oauth_credentials=client)
     tracks = []
     for item in music.get_history()[: payload.get("limit", 10)]:
         artists = ", ".join(artist.get("name", "") for artist in item.get("artists", []) if artist.get("name"))
