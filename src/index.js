@@ -284,10 +284,7 @@ async function editInlineMedia(inlineMessageId, audio, spotifyTrack, links) {
   try {
     await telegram("editMessageMedia", {
       inline_message_id: inlineMessageId,
-      media,
-      reply_markup: {
-        inline_keyboard: [[{ text: "Show recent Spotify songs", switch_inline_query_current_chat: "" }]]
-      }
+      media
     });
   } catch (err) {
     if (media.type !== "audio") throw err;
@@ -299,9 +296,6 @@ async function editInlineMedia(inlineMessageId, audio, spotifyTrack, links) {
         media: audio.url,
         caption: buildAudioCaption(spotifyTrack, audio, links),
         parse_mode: "HTML"
-      },
-      reply_markup: {
-        inline_keyboard: [[{ text: "Show recent Spotify songs", switch_inline_query_current_chat: "" }]]
       }
     });
   }
