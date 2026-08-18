@@ -2,14 +2,14 @@
   "$schema": "https://schema.railpack.com",
   "provider": "node",
   "packages": {
-    "node": "20",
+    "node": "22",
     "python": "3.11"
   },
   "steps": {
     "install": {
       "commands": [
         "...",
-        "python -m pip install --target .python-packages ytconverter"
+        "python -m pip install --target .python-packages ytconverter yt-dlp\\[default\\]"
       ]
     }
   },
