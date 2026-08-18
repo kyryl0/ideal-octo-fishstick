@@ -9,7 +9,7 @@
     "install": {
       "commands": [
         "...",
-        "python -m pip install --user --break-system-packages -r requirements.txt"
+        "python -m pip install --user --break-system-packages ytconverter"
       ]
     }
   },
