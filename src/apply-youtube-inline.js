@@ -141,28 +141,22 @@ replacePatternOnce(
   `async function resolveSongLinks(track) {
   const enriched = await enrichTrackWithSongLink(track);
   const spotify = enriched.spotifyUrl || makeSpotifySearchUrl(enriched.title, enriched.artist);
+  const fallbackSongLink = track.spotifyId && !String(track.spotifyId).includes(":") ? "https://song.link/s/" + track.spotifyId : undefined;
   return {
     spotify,
-    appleMusic: enriched.appleMusicUrl,
-    youtubeMusic: enriched.youtubeUrl,
-    songLink: enriched.songLinkUrl,
-    other: enriched.songLinkUrl || spotify
+    youtubeMusic: enriched.youtubeUrl || "https://music.youtube.com/search?q=" + encodeURIComponent([enriched.title, enriched.artist].filter(Boolean).join(" ")),
+    songLink: enriched.songLinkUrl || fallbackSongLink
   };
 }
 
 function buildAudioCaption(track, audio, links) {
   const linkParts = [
-    links.songLink ? makeHtmlLink("Song.link", links.songLink) : undefined,
     links.spotify ? makeHtmlLink("Spotify", links.spotify) : undefined,
-    links.appleMusic ? makeHtmlLink("Apple Music", links.appleMusic) : undefined,
-    links.youtubeMusic ? makeHtmlLink("YouTube Music", links.youtubeMusic) : undefined
+    links.youtubeMusic ? makeHtmlLink("Youtube Music ", links.youtubeMusic) + "Ã°Å¸Ëâ" : undefined,
+    links.songLink ? makeHtmlLink("Other", links.songLink) : undefined
   ].filter(Boolean);
 
-  return [
-    escapeHtml(track.title) + " - " + escapeHtml(track.artist),
-    audio.credit ? "Audio: " + escapeHtml(audio.credit) : undefined,
-    linkParts.length ? "Listen: " + linkParts.join(" | ") : undefined
-  ].filter(Boolean).join("\\n");
+  return linkParts.length ? "Ã°Å¸ââ¹ " + linkParts.join(" | ") : undefined;
 }`,
   "Song.link caption and links"
 );
