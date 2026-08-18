@@ -164,7 +164,7 @@ if cookie_b64:
     config_home = output_dir / ".yt-dlp-config"
     config_dir = config_home / "yt-dlp"
     config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "config").write_text("--cookies\\n" + str(cookie_path) + "\\n")
+    (config_dir / "config").write_text("--cookies\\\\n" + str(cookie_path) + "\\\\n")
     os.environ["XDG_CONFIG_HOME"] = str(config_home)
 
 before = {
