@@ -13,6 +13,39 @@ function replaceOnce(before, after, label) {
   changed = true;
 }
 
+function insertAfter(needle, insertion, label) {
+  if (source.includes(insertion)) return;
+  if (!source.includes(needle)) {
+    throw new Error(`Could not apply YouTube inline patch. Missing ${label}.`);
+  }
+  source = source.replace(needle, `${needle}${insertion}`);
+  changed = true;
+}
+
+insertAfter(
+  `import { createHash, randomBytes } from "node:crypto";`,
+  `\nimport { execFile } from "node:child_process";`,
+  "execFile import"
+);
+
+insertAfter(
+  `import { pipeline } from "node:stream/promises";`,
+  `\nimport { promisify } from "node:util";`,
+  "promisify import"
+);
+
+insertAfter(
+  `const SPOOTY_AUDIO_EXTENSION = normalizeAudioExtension(process.env.SPOOTY_AUDIO_EXTENSION || "mp3");`,
+  `\nconst YTCONVERTER_AUDIO_EXTENSION = normalizeAudioExtension(process.env.YTCONVERTER_AUDIO_EXTENSION || SPOOTY_AUDIO_EXTENSION);\nconst YTCONVERTER_AUDIO_QUALITY = String(process.env.YTCONVERTER_AUDIO_QUALITY || "192");`,
+  "ytconverter audio config"
+);
+
+insertAfter(
+  `const jobs = new Map();`,
+  `\nconst execFileAsync = promisify(execFile);`,
+  "execFileAsync helper"
+);
+
 replaceOnce(
   `async function handleInlineQuery(query) {\n  const telegramUserId = String(query.from.id);\n\n  if (!spotifyTokens[telegramUserId]) {`,
   `async function handleInlineQuery(query) {\n  const telegramUserId = String(query.from.id);\n  const youtubeTrack = await getYoutubeInlineTrack(query.query);\n\n  if (youtubeTrack) {\n    await answerWithYoutubeResult(query.id, telegramUserId, youtubeTrack);\n    return;\n  }\n\n  if (!spotifyTokens[telegramUserId]) {`,
@@ -21,20 +54,26 @@ replaceOnce(
 
 replaceOnce(
   `async function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {`,
-  `async function answerWithYoutubeResult(inlineQueryId, telegramUserId, track) {\n  const resultId = makeYoutubeResultId(telegramUserId, track);\n  chosenTracks.set(resultId, track);\n\n  await telegram("answerInlineQuery", {\n    inline_query_id: inlineQueryId,\n    results: [{\n      type: "article",\n      id: resultId,\n      title: track.title,\n      description: "YouTube link - tap to fetch audio",\n      thumbnail_url: track.artwork,\n      input_message_content: {\n        message_text: \`Preparing audio for:\\n\${track.title}\\n\${track.artist}\`\n      },\n      reply_markup: {\n        inline_keyboard: [[{ text: "Loading... 😵‍💫", callback_data: "loading" }]]\n      }\n    }],\n    cache_time: 0,\n    is_personal: true\n  });\n}\n\nasync function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {`,
+  `async function answerWithYoutubeResult(inlineQueryId, telegramUserId, track) {\n  const resultId = makeYoutubeResultId(telegramUserId, track);\n  chosenTracks.set(resultId, track);\n\n  await telegram("answerInlineQuery", {\n    inline_query_id: inlineQueryId,\n    results: [{\n      type: "article",\n      id: resultId,\n      title: track.title,\n      description: "YouTube link - tap to fetch audio",\n      thumbnail_url: track.artwork,\n      input_message_content: {\n        message_text: "Preparing audio for:\\n" + track.title + "\\n" + track.artist\n      },\n      reply_markup: {\n        inline_keyboard: [[{ text: "Loading audio...", callback_data: "loading" }]]\n      }\n    }],\n    cache_time: 0,\n    is_personal: true\n  });\n}\n\nasync function answerWithConnectResult(inlineQueryId, telegramUserId, title = "Connect Spotify") {`,
   "YouTube inline result helper"
 );
 
 replaceOnce(
+  `async function downloadSpootyAudio(spotifyTrack) {\n  if (!SPOOTY_BASE_URL) {`,
+  `async function downloadSpootyAudio(spotifyTrack) {\n  if (spotifyTrack.youtubeUrl) {\n    return downloadYoutubeAudio(spotifyTrack);\n  }\n\n  if (!SPOOTY_BASE_URL) {`,
+  "ytconverter direct download branch"
+);
+
+replaceOnce(
   `  if (!spotifyTrack.spotifyUrl) {\n    throw new Error("Spotify track URL is missing.");\n  }\n\n  const fileBase = safeSegment(spotifyTrack.spotifyId || createHash("sha256").update(spotifyTrack.spotifyUrl).digest("hex"));`,
-  `  const sourceUrl = spotifyTrack.youtubeUrl || spotifyTrack.spotifyUrl;\n\n  if (!sourceUrl) {\n    throw new Error("Track URL is missing.");\n  }\n\n  const fileBase = safeSegment(spotifyTrack.spotifyId || spotifyTrack.youtubeId || createHash("sha256").update(sourceUrl).digest("hex"));`,
-  "Spooty source URL selection"
+  `  const sourceUrl = spotifyTrack.spotifyUrl;\n\n  if (!sourceUrl) {\n    throw new Error("Spotify track URL is missing.");\n  }\n\n  const fileBase = safeSegment(spotifyTrack.spotifyId || createHash("sha256").update(sourceUrl).digest("hex"));`,
+  "Spotify source URL selection"
 );
 
 replaceOnce(
   `  const spootyTrack = await createAndWaitForSpootyTrack(spotifyTrack.spotifyUrl);`,
   `  const spootyTrack = await createAndWaitForSpootyTrack(sourceUrl, spotifyTrack);`,
-  "Spooty direct URL create call"
+  "Spooty metadata create call"
 );
 
 replaceOnce(
@@ -44,25 +83,109 @@ replaceOnce(
 );
 
 replaceOnce(
-  `async function resolveSongLinks(track) {\n  const fallbackOther = track.spotifyId ? \`https://song.link/s/\${track.spotifyId}\` : track.spotifyUrl;`,
-  `async function resolveSongLinks(track) {\n  if (track.youtubeUrl) {\n    return {\n      spotify: undefined,\n      youtubeMusic: track.youtubeUrl,\n      other: track.youtubeUrl\n    };\n  }\n\n  const fallbackOther = track.spotifyId ? \`https://song.link/s/\${track.spotifyId}\` : track.spotifyUrl;`,
+  `  if (!createRes.ok) {\n    throw new Error(` + "`Spooty create request failed: ${createRes.status}`" + `);\n  }`,
+  `  if (!createRes.ok) {\n    const errorText = await createRes.text().catch(() => "");\n    throw new Error(` + "`Spooty create request failed: ${createRes.status}${formatRemoteError(errorText)}`" + `);\n  }`,
+  "Spooty create response details"
+);
+
+replaceOnce(
+  `async function resolveSongLinks(track) {\n  const fallbackOther = track.spotifyId ? ` + "`https://song.link/s/${track.spotifyId}`" + ` : track.spotifyUrl;`,
+  `async function resolveSongLinks(track) {\n  if (track.youtubeUrl) {\n    return {\n      spotify: undefined,\n      appleMusic: undefined,\n      youtubeMusic: track.youtubeUrl,\n      other: track.youtubeUrl\n    };\n  }\n\n  const fallbackOther = track.spotifyId ? ` + "`https://song.link/s/${track.spotifyId}`" + ` : track.spotifyUrl;`,
   "YouTube song links"
 );
 
 const helper = `
+async function downloadYoutubeAudio(track) {
+  const sourceUrl = track.youtubeUrl;
+  if (!sourceUrl) {
+    throw new Error("YouTube URL is missing.");
+  }
+
+  const fileBase = safeSegment(track.youtubeId || createHash("sha256").update(sourceUrl).digest("hex"));
+  const cachedFileName = findCachedAudioFile(fileBase);
+
+  if (cachedFileName) {
+    return buildLocalAudioResult(track, cachedFileName);
+  }
+
+  const outputTemplate = join(AUDIO_DIR, \`\${fileBase}.%(ext)s\`);
+  await runYtConverterDownload(sourceUrl, outputTemplate);
+
+  const downloadedFileName = findCachedAudioFile(fileBase);
+  if (!downloadedFileName) {
+    throw new Error("ytconverter finished without producing an audio file.");
+  }
+
+  return buildLocalAudioResult(track, downloadedFileName);
+}
+
+async function runYtConverterDownload(sourceUrl, outputTemplate) {
+  const payload = Buffer.from(JSON.stringify({
+    url: sourceUrl,
+    outputTemplate,
+    audioFormat: YTCONVERTER_AUDIO_EXTENSION,
+    audioQuality: YTCONVERTER_AUDIO_QUALITY
+  })).toString("base64");
+
+  const script = \`
+import base64
+import json
+import sys
+
+try:
+    import ytconverter  # noqa: F401 - validates the requested downloader package is installed
+except Exception:
+    pass
+
+from yt_dlp import YoutubeDL
+
+payload = json.loads(base64.b64decode(sys.argv[1]).decode("utf-8"))
+options = {
+    "format": "bestaudio/best",
+    "outtmpl": payload["outputTemplate"],
+    "quiet": True,
+    "no_warnings": True,
+    "postprocessors": [{
+        "key": "FFmpegExtractAudio",
+        "preferredcodec": payload["audioFormat"],
+        "preferredquality": payload["audioQuality"],
+    }],
+}
+
+with YoutubeDL(options) as ydl:
+    ydl.download([payload["url"]])
+\`;
+
+  const errors = [];
+  for (const command of getPythonCommands()) {
+    try {
+      await execFileAsync(command, ["-c", script, payload], {
+        maxBuffer: 1024 * 1024 * 4,
+        timeout: Number(process.env.YTCONVERTER_TIMEOUT_MS || 180000),
+        windowsHide: true
+      });
+      return;
+    } catch (err) {
+      errors.push(\`\${command}: \${err.stderr || err.message}\`);
+    }
+  }
+
+  throw new Error(\`ytconverter download failed: \${errors.join("; ").slice(0, 500)}\`);
+}
+
 async function getYoutubeInlineTrack(queryText) {
   const youtubeUrl = extractYoutubeUrl(queryText);
   if (!youtubeUrl) return undefined;
 
   const youtubeId = getYoutubeVideoId(youtubeUrl);
-  const normalizedUrl = youtubeId ? \`https://www.youtube.com/watch?v=\${youtubeId}\` : youtubeUrl;
+  const normalizedUrl = youtubeId ? \`https://music.youtube.com/watch?v=\${youtubeId}\` : youtubeUrl;
   const title = await getYoutubeTitle(normalizedUrl);
 
   return {
     source: "youtube",
     youtubeId,
     youtubeUrl: normalizedUrl,
-    spotifyId: youtubeId,
+    spotifyId: youtubeId ? \`yt:\${youtubeId}\` : undefined,
     title,
     artist: "YouTube",
     album: "Direct link",
@@ -132,12 +255,16 @@ async function getYoutubeTitle(youtubeUrl) {
     return "YouTube audio";
   }
 }
+
+function getPythonCommands() {
+  return [process.env.PYTHON_BIN, "python3", "python"].filter(Boolean);
+}
 `;
 
-if (!source.includes("async function getYoutubeInlineTrack(queryText)")) {
+if (!source.includes("async function downloadYoutubeAudio(track)")) {
   const insertionPoint = "\nasync function answerWithYoutubeResult";
   if (!source.includes(insertionPoint)) {
-    throw new Error("Could not insert YouTube link helpers.");
+    throw new Error("Could not insert YouTube download helpers.");
   }
   source = source.replace(insertionPoint, `${helper}${insertionPoint}`);
   changed = true;
@@ -145,5 +272,6 @@ if (!source.includes("async function getYoutubeInlineTrack(queryText)")) {
 
 if (changed) {
   writeFileSync(indexPath, source);
-  console.log("Applied YouTube inline support.");
+  console.log("Applied YouTube inline support with ytconverter audio downloads.");
 }
+
