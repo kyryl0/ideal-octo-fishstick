@@ -353,7 +353,7 @@ async function getYoutubeInlineTrack(queryText) {
     title,
     artist: "YouTube",
     album: "Direct link",
-    artwork: youtubeId ? "https://img.youtube.com/vi/" + youtubeId + "/mqdefault.jpg" : undefined,
+    artwork: youtubeId ? "https://img.youtube.com/vi/" + youtubeId + "/hqdefault.jpg" : undefined,
     playedAt: new Date().toISOString()
   };
 }
@@ -372,7 +372,7 @@ async function enrichTrackWithSongLink(track) {
       title,
       artist,
       album: entity.albumName || track.album,
-      artwork: entity.thumbnailUrl || track.artwork,
+      artwork: track.artwork,
       spotifyUrl: data.linksByPlatform?.spotify?.url || track.spotifyUrl || makeSpotifySearchUrl(title, artist),
       appleMusicUrl: data.linksByPlatform?.appleMusic?.url,
       songLinkUrl: data.pageUrl
@@ -495,7 +495,7 @@ async function getCurrentTrack(telegramUserId) {
     title: data.item.name,
     artist: data.item.artists?.map((artist) => artist.name).join(", ") || "Unknown artist",
     album: data.item.album?.name || "Unknown album",
-    artwork: data.item.album?.images?.at(-1)?.url || data.item.album?.images?.[0]?.url,
+    artwork: data.item.album?.images?.[0]?.url || data.item.album?.images?.at(-1)?.url,
     playedAt: new Date().toISOString(),
     spotifyUrl: data.item.external_urls?.spotify
   };
