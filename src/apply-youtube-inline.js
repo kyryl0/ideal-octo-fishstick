@@ -41,6 +41,12 @@ replacePatternOnce(
 );
 
 replacePatternOnce(
+  /await editText\(inlineMessageId, `Loading audio\.\.\.\\n\$\{spotifyTrack\.title\}\\n\$\{spotifyTrack\.artist\} - \$\{spotifyTrack\.album\}`\);/,
+  `await editText(inlineMessageId, "Loading... \\u{1F504}");`,
+  "encoding-safe loading message"
+);
+
+replacePatternOnce(
   /  if \(!SPOTIFY_CLIENT_ID\) errors\.push\("SPOTIFY_CLIENT_ID"\);\n  if \(!SPOTIFY_CLIENT_SECRET\) errors\.push\("SPOTIFY_CLIENT_SECRET"\);\n/,
   "",
   "optional Spotify configuration"
@@ -152,13 +158,31 @@ replacePatternOnce(
 function buildAudioCaption(track, audio, links) {
   const linkParts = [
     links.spotify ? makeHtmlLink("Spotify", links.spotify) : undefined,
-    links.youtubeMusic ? makeHtmlLink("Youtube Music ", links.youtubeMusic) + "Ã°Å¸Ëâ" : undefined,
+    links.youtubeMusic ? makeHtmlLink("Youtube Music ", links.youtubeMusic) + "ÃÆÃÂ°Ãâ¦ÃÂ¸Ãâ¹ÃÅÃÂ¢Ãâ¬Ãâ¢" : undefined,
     links.songLink ? makeHtmlLink("Other", links.songLink) : undefined
   ].filter(Boolean);
 
-  return linkParts.length ? "Ã°Å¸ââ¹ " + linkParts.join(" | ") : undefined;
+  return linkParts.length ? "ÃÆÃÂ°Ãâ¦ÃÂ¸ÃÂ¢Ãâ¬Ãâ¢ÃÂ¢Ãâ¬ÃÂ¹ " + linkParts.join(" | ") : undefined;
 }`,
   "Song.link caption and links"
+);
+
+replacePatternOnce(
+  /links\.youtubeMusic \? makeHtmlLink\("Youtube Music ", links\.youtubeMusic\) \+ "[^"]*" : undefined,/,
+  `links.youtubeMusic ? makeHtmlLink("Youtube Music ", links.youtubeMusic) + "\\u{1F612}" : undefined,`,
+  "encoding-safe YouTube Music emoji"
+);
+
+replacePatternOnce(
+  /return linkParts\.length \? "[^"]* " \+ linkParts\.join\(" \| "\) : undefined;/,
+  `return linkParts.length ? "\\u{1F48B} " + linkParts.join(" | ") : undefined;`,
+  "encoding-safe caption emoji"
+);
+
+replaceOnce(
+  `      reply_markup: { inline_keyboard: [[{ text: "Loading audio...", callback_data: "loading" }]] }\n    }],\n    cache_time: 0,\n    is_personal: true\n  });\n}\n\nasync function answerWithConnectResult`,
+  `      reply_markup: { inline_keyboard: [[{ text: "Loading... \\u{1F504}", callback_data: "loading" }]] }\n    }],\n    cache_time: 0,\n    is_personal: true\n  });\n}\n\nasync function answerWithConnectResult`,
+  "encoding-safe YouTube loading label"
 );
 
 const helper = `
