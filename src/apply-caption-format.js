@@ -81,7 +81,10 @@ const currentTrackReplacement = `    tracks = await getRecentlyPlayed(telegramUs
       }
     } catch (error) {
       console.warn("Spotify current track lookup skipped:", error.message);
-    }`;
+    }
+    tracks = tracks.filter((track, index, allTracks) =>
+      track.spotifyId && allTracks.findIndex((candidate) => candidate.spotifyId === track.spotifyId) === index
+    );`;
 
 if (source.includes(currentTrackNeedle)) {
   source = source.replace(currentTrackNeedle, currentTrackReplacement);
