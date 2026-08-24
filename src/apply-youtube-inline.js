@@ -97,14 +97,16 @@ insertAfter(
 insertAfter(
   `const TOKEN_PATH = join(DATA_DIR, "spotify-tokens.json");`,
   `\nconst KNOWN_USER_PATH = join(DATA_DIR, "known-users.json");\nconst DOWNLOAD_HISTORY_PATH = join(DATA_DIR, "download-history.json");
-const OWNER_TELEGRAM_ID = "443036991";`,
+const OWNER_TELEGRAM_ID = "443036991";
+const BOOTSTRAP_USERS = process.env.BOOTSTRAP_USERS || "";`,
   "new user notification paths"
 );
 
 insertAfter(
   `const spotifyTokens = loadJson(TOKEN_PATH, {});`,
   `\nconst knownUsers = loadJson(KNOWN_USER_PATH, {});
-const downloadHistory = loadJson(DOWNLOAD_HISTORY_PATH, {});`,
+const downloadHistory = loadJson(DOWNLOAD_HISTORY_PATH, {});
+seedKnownUsersFromEnvironment();`,
   "new user storage"
 );
 
@@ -213,7 +215,7 @@ async function notifyOwnerAboutNewUser(user) {
 
   const displayName = user.username ? "@" + user.username : [user.first_name, user.last_name].filter(Boolean).join(" ") || "Unknown user";
   knownUsers[userId] = { username: user.username || undefined, displayName, startedAt: new Date().toISOString() };
-  writeFileSync(KNOWN_USER_PATH, JSON.stringify(knownUsers, null, 2));
+  saveKnownUsers();
 
   try {
     await telegram("sendMessage", { chat_id: OWNER_TELEGRAM_ID, text: "New bot user: " + displayName + " (" + userId + ")" });
@@ -222,6 +224,45 @@ async function notifyOwnerAboutNewUser(user) {
   }
 }
 
+
+
+function saveKnownUsers() {
+  writeFileSync(KNOWN_USER_PATH, JSON.stringify(knownUsers, null, 2));
+}
+
+function normalizeUsername(value) {
+  const username = String(value || "").trim().replace(/^@/, "");
+  return username || undefined;
+}
+
+function resolveKnownUser(query) {
+  const value = String(query || "").trim().replace(/^@/, "").toLowerCase();
+  if (!value) return undefined;
+  return Object.keys(knownUsers).find((id) => {
+    const user = knownUsers[id] || {};
+    return id === value || String(user.username || "").toLowerCase() === value;
+  });
+}
+
+function seedKnownUsersFromEnvironment() {
+  let changed = false;
+  for (const entry of BOOTSTRAP_USERS.split(",")) {
+    const [rawId, rawUsername] = entry.trim().split(":", 2);
+    const userId = String(rawId || "").trim();
+    if (!/^\\d+$/.test(userId) || userId === OWNER_TELEGRAM_ID) continue;
+    if (knownUsers[userId]) continue;
+
+    const username = normalizeUsername(rawUsername);
+    knownUsers[userId] = {
+      username,
+      displayName: username ? "@" + username : userId,
+      addedAt: new Date().toISOString(),
+      manuallyAdded: true
+    };
+    changed = true;
+  }
+  if (changed) saveKnownUsers();
+}
 
 function recordDownload(telegramUserId, track) {
   if (!telegramUserId) return;
@@ -280,6 +321,56 @@ async function handleAdminCommand(message) {
     return true;
   }
 
+
+  if (normalizedCommand === "/adduser") {
+    const targetId = String(words.shift() || "").trim();
+    if (!/^\\d+$/.test(targetId)) {
+      await telegram("sendMessage", {
+        chat_id: message.chat.id,
+        text: "Use /adduser followed by a numeric Telegram user ID, optionally then @username."
+      });
+      return true;
+    }
+
+    const username = normalizeUsername(words.shift());
+    const existing = knownUsers[targetId] || {};
+    knownUsers[targetId] = {
+      ...existing,
+      username: username || existing.username,
+      displayName: username ? "@" + username : (existing.displayName || targetId),
+      addedAt: existing.addedAt || new Date().toISOString(),
+      manuallyAdded: true
+    };
+    saveKnownUsers();
+    await telegram("sendMessage", {
+      chat_id: message.chat.id,
+      text: "Added " + (knownUsers[targetId].displayName || targetId) + " (" + targetId + ")."
+    });
+    return true;
+  }
+
+  if (normalizedCommand === "/removeuser") {
+    const targetId = resolveKnownUser(words.join(" "));
+    if (!targetId) {
+      await telegram("sendMessage", {
+        chat_id: message.chat.id,
+        text: "Use /removeuser followed by a user ID or @username from /users."
+      });
+      return true;
+    }
+
+    const label = knownUsers[targetId]?.displayName || targetId;
+    delete knownUsers[targetId];
+    delete downloadHistory[targetId];
+    saveKnownUsers();
+    writeFileSync(DOWNLOAD_HISTORY_PATH, JSON.stringify(downloadHistory, null, 2));
+    await telegram("sendMessage", {
+      chat_id: message.chat.id,
+      text: "Removed " + label + " (" + targetId + ") from broadcasts and history."
+    });
+    return true;
+  }
+
   if (normalizedCommand === "/users") {
     const userIds = Object.keys(knownUsers);
     const lines = userIds.slice(0, 100).map((id) => {
@@ -298,11 +389,7 @@ async function handleAdminCommand(message) {
   }
 
   if (normalizedCommand === "/history") {
-    const query = words.join(" ").replace("@", "").toLowerCase();
-    const matchingId = Object.keys(knownUsers).find((id) => {
-      const user = knownUsers[id] || {};
-      return id === query || String(user.username || "").toLowerCase() === query;
-    });
+    const matchingId = resolveKnownUser(words.join(" "));
 
     if (!matchingId) {
       await telegram("sendMessage", {
