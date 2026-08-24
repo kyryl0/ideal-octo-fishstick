@@ -221,7 +221,7 @@ async function downloadYoutubeAudio(track) {
 }
 
 function shouldRetryWithCookies(error) {
-  return /sign in|not a bot|confirm you|age.restricted|private|members.only|\b403\b|forbidden/i.test(
+  return /sign in|not a bot|confirm you|age.restricted|private|members.only|\\b403\\b|forbidden/i.test(
     String(error?.message || error)
   );
 }
