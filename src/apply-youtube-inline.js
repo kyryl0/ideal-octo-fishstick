@@ -204,10 +204,26 @@ async function downloadYoutubeAudio(track) {
 
   if (cachedFileName) return buildLocalAudioResult(track, cachedFileName);
 
-  await runYtConverterDownload(sourceUrl, AUDIO_DIR, fileBase, track);
+  try {
+    await runYtConverterDownload(sourceUrl, AUDIO_DIR, fileBase, track, false);
+  } catch (publicError) {
+    if (!process.env.YT_COOKIES_FILE_BASE64 || !shouldRetryWithCookies(publicError)) {
+      throw publicError;
+    }
+
+    console.warn("Public YouTube download was challenged; retrying with configured cookies.");
+    await runYtConverterDownload(sourceUrl, AUDIO_DIR, fileBase, track, true);
+  }
+
   const downloadedFileName = findCachedAudioFile(fileBase);
   if (!downloadedFileName) throw new Error("ytconverter finished without producing an audio file.");
   return buildLocalAudioResult(track, downloadedFileName);
+}
+
+function shouldRetryWithCookies(error) {
+  return /sign in|not a bot|confirm you|age.restricted|private|members.only|\\b403\\b|forbidden/i.test(
+    String(error?.message || error)
+  );
 }
 
 function makeAudioFileBase(track, sourceUrl) {
@@ -217,7 +233,7 @@ function makeAudioFileBase(track, sourceUrl) {
   return label + "-" + uniqueSuffix;
 }
 
-async function runYtConverterDownload(sourceUrl, outputDir, fileBase, track) {
+async function runYtConverterDownload(sourceUrl, outputDir, fileBase, track, useCookies) {
   const payload = Buffer.from(JSON.stringify({
     url: sourceUrl,
     outputDir,
@@ -227,7 +243,8 @@ async function runYtConverterDownload(sourceUrl, outputDir, fileBase, track) {
     artworkUrl: track.artwork,
     title: track.title,
     artist: track.artist,
-    album: track.album
+    album: track.album,
+    useCookies
   })).toString("base64");
 
   const script = \`
@@ -248,7 +265,7 @@ if payload["audioFormat"].lower() != "mp3":
 output_dir = Path(payload["outputDir"])
 output_dir.mkdir(parents=True, exist_ok=True)
 cookie_b64 = os.environ.get("YT_COOKIES_FILE_BASE64")
-if cookie_b64:
+if payload.get("useCookies") and cookie_b64:
     cookie_path = output_dir / ".yt-cookies.txt"
     cookie_path.write_bytes(base64.b64decode(cookie_b64))
     config_home = output_dir / ".yt-dlp-config"
@@ -272,7 +289,11 @@ original_run = single_mp3.sp.run
 def yt_dlp_module_command(command):
     if command and command[0] == "yt-dlp":
         command = command[1:]
-        runtime = [sys.executable, "-m", "yt_dlp", "--js-runtimes", "node"]
+        runtime = [
+            sys.executable, "-m", "yt_dlp",
+            "--js-runtimes", "node",
+            "--remote-components", "ejs:github"
+        ]
         return [*runtime, *command]
     return command
 
