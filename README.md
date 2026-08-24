@@ -30,11 +30,13 @@ PYTHON_BIN=python
 TELEGRAM_MEDIA_TYPE=audio
 ```
 
-For restricted or bot-checked YouTube videos, yt-dlp may also use a Netscape cookies file. Prefer base64 so Railway preserves the file exactly:
+Normal public YouTube downloads do not need cookies. The bot uses yt-dlp's EJS challenge solver and refreshes its solver components automatically. If a video genuinely requires a signed-in account, it will retry once with an optional Netscape cookies file:
 
 ```text
 YT_COOKIES_FILE_BASE64=base64-encoded-cookies-txt
 ```
+
+Cookies are now a fallback only; stale cookies are not sent on normal requests.
 
 4. Set the Spotify redirect URI to:
 
