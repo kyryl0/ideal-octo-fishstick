@@ -96,13 +96,15 @@ insertAfter(
 
 insertAfter(
   `const TOKEN_PATH = join(DATA_DIR, "spotify-tokens.json");`,
-  `\nconst KNOWN_USER_PATH = join(DATA_DIR, "known-users.json");\nconst OWNER_TELEGRAM_ID = "443036991";`,
+  `\nconst KNOWN_USER_PATH = join(DATA_DIR, "known-users.json");\nconst DOWNLOAD_HISTORY_PATH = join(DATA_DIR, "download-history.json");
+const OWNER_TELEGRAM_ID = "443036991";`,
   "new user notification paths"
 );
 
 insertAfter(
   `const spotifyTokens = loadJson(TOKEN_PATH, {});`,
-  `\nconst knownUsers = loadJson(KNOWN_USER_PATH, {});`,
+  `\nconst knownUsers = loadJson(KNOWN_USER_PATH, {});
+const downloadHistory = loadJson(DOWNLOAD_HISTORY_PATH, {});`,
   "new user storage"
 );
 
@@ -116,6 +118,29 @@ replaceOnce(
   `  if (update.message?.text === "/start") {\n    const loginUrl = makeLoginUrl(update.message.from.id);`,
   `  if (update.message?.text === "/start") {\n    await notifyOwnerAboutNewUser(update.message.from);\n    const loginUrl = makeLoginUrl(update.message.from.id);`,
   "new user notification on start"
+);
+replaceOnce(
+  `  if (update.message?.text === "/start") {\n    await notifyOwnerAboutNewUser(update.message.from);\n    const loginUrl = makeLoginUrl(update.message.from.id);`,
+  `  if (update.message?.text?.startsWith("/")) {\n    if (await handleAdminCommand(update.message)) return;\n  }\n\n  if (update.message?.text === "/start") {\n    await notifyOwnerAboutNewUser(update.message.from);\n    const loginUrl = makeLoginUrl(update.message.from.id);`,
+  "admin command handling"
+);
+
+replaceOnce(
+  `  jobs.set(jobKey, prepareAndSwap(chosen.inline_message_id, track).finally(() => jobs.delete(jobKey)));`,
+  `  jobs.set(jobKey, prepareAndSwap(chosen.inline_message_id, track, chosen.from).finally(() => jobs.delete(jobKey)));`,
+  "download user handoff"
+);
+
+replaceOnce(
+  `async function prepareAndSwap(inlineMessageId, spotifyTrack) {`,
+  `async function prepareAndSwap(inlineMessageId, spotifyTrack, telegramUser) {`,
+  "download user signature"
+);
+
+replaceOnce(
+  `    await editInlineMedia(inlineMessageId, audio, spotifyTrack, links);`,
+  `    await editInlineMedia(inlineMessageId, audio, spotifyTrack, links);\n    if (telegramUser) {\n      await notifyOwnerAboutNewUser(telegramUser);\n      recordDownload(telegramUser.id, spotifyTrack);\n    }`,
+  "download history record"
 );
 
 replaceOnce(
@@ -195,6 +220,114 @@ async function notifyOwnerAboutNewUser(user) {
   } catch (err) {
     console.error("New user notification failed:", err);
   }
+}
+
+
+function recordDownload(telegramUserId, track) {
+  if (!telegramUserId) return;
+  const userId = String(telegramUserId);
+  const entries = downloadHistory[userId] || [];
+  entries.unshift({
+    title: track.title || "Unknown title",
+    artist: track.artist || "Unknown artist",
+    album: track.album || undefined,
+    source: track.source || (track.spotifyUrl ? "spotify" : "youtube"),
+    downloadedAt: new Date().toISOString()
+  });
+  downloadHistory[userId] = entries.slice(0, 200);
+  writeFileSync(DOWNLOAD_HISTORY_PATH, JSON.stringify(downloadHistory, null, 2));
+}
+
+async function handleAdminCommand(message) {
+  const userId = String(message?.from?.id || "");
+  if (userId !== OWNER_TELEGRAM_ID) return false;
+
+  const words = String(message.text || "").trim().split(" ").filter(Boolean);
+  const normalizedCommand = String(words.shift() || "").split("@")[0].toLowerCase();
+  const lineBreak = String.fromCharCode(10);
+
+  if (normalizedCommand === "/broadcast") {
+    if (!message.reply_to_message) {
+      await telegram("sendMessage", {
+        chat_id: message.chat.id,
+        text: "Reply to a message, then send /broadcast."
+      });
+      return true;
+    }
+
+    const recipients = Object.keys(knownUsers).filter((id) => id !== OWNER_TELEGRAM_ID);
+    let sent = 0;
+    let failed = 0;
+    for (const chatId of recipients) {
+      try {
+        await telegram("copyMessage", {
+          chat_id: chatId,
+          from_chat_id: message.chat.id,
+          message_id: message.reply_to_message.message_id
+        });
+        sent += 1;
+      } catch (error) {
+        failed += 1;
+        console.warn("Broadcast delivery failed for", chatId, error.message);
+      }
+      await sleep(40);
+    }
+
+    await telegram("sendMessage", {
+      chat_id: message.chat.id,
+      text: "Broadcast complete. Sent: " + sent + ". Failed: " + failed + "."
+    });
+    return true;
+  }
+
+  if (normalizedCommand === "/users") {
+    const userIds = Object.keys(knownUsers);
+    const lines = userIds.slice(0, 100).map((id) => {
+      const user = knownUsers[id] || {};
+      const label = user.displayName || (user.username ? "@" + user.username : id);
+      return label + " (" + id + "): " + (downloadHistory[id] || []).length + " downloads";
+    });
+    const remaining = userIds.length - lines.length;
+    await telegram("sendMessage", {
+      chat_id: message.chat.id,
+      text: lines.length
+        ? "Users (" + userIds.length + "):" + lineBreak + lines.join(lineBreak) + (remaining > 0 ? lineBreak + "+" + remaining + " more" : "")
+        : "No users recorded yet."
+    });
+    return true;
+  }
+
+  if (normalizedCommand === "/history") {
+    const query = words.join(" ").replace("@", "").toLowerCase();
+    const matchingId = Object.keys(knownUsers).find((id) => {
+      const user = knownUsers[id] || {};
+      return id === query || String(user.username || "").toLowerCase() === query;
+    });
+
+    if (!matchingId) {
+      await telegram("sendMessage", {
+        chat_id: message.chat.id,
+        text: "Use /history followed by a user ID or @username from /users."
+      });
+      return true;
+    }
+
+    const user = knownUsers[matchingId] || {};
+    const label = user.displayName || (user.username ? "@" + user.username : matchingId);
+    const tracks = (downloadHistory[matchingId] || []).slice(0, 50);
+    const lines = tracks.map((track) =>
+      track.title + " - " + track.artist + " [" + track.source + "] " + String(track.downloadedAt || "").slice(0, 16).replace("T", " ")
+    );
+    await telegram("sendMessage", {
+      chat_id: message.chat.id,
+      text: lines.length
+        ? "Downloads for " + label + " (" + matchingId + "):" + lineBreak + lines.join(lineBreak)
+        : "No downloads recorded for " + label + " yet."
+    });
+    return true;
+  }
+
+  return false;
 }
 
 async function downloadYoutubeAudio(track) {
