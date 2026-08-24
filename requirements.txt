@@ -1,2 +1,2 @@
 ytconverter
-
+yt-dlp[default]
