@@ -75,7 +75,15 @@ Create a Spotify Developer application, add the callback URL above, and provide 
 Only Telegram user `443036991` can use these commands in a private chat with the bot:
 
 - Reply to a text, photo, video, audio, or document, then send `/broadcast` to copy it to every recorded user.
+- `/adduser <user_id> [@username]` manually adds or updates a broadcast recipient.
+- `/removeuser <@username|user_id>` removes a recipient and their stored history.
 - `/users` lists recorded users with their download counts.
 - `/history <@username|user_id>` shows that user's recent successful downloads.
 
-Download history begins after this version is deployed and retains the latest 200 downloads per user.
+Set this Railway variable to restore manually managed users after every deployment:
+
+```text
+BOOTSTRAP_USERS=123456:@alice,234567:@bob
+```
+
+Telegram does not let bots resolve a new private user's `@username` into a chat ID, so `/adduser` needs the numeric user ID. Usernames work for existing-user lookup and removal. A Railway volume mounted for `data/` remains the best way to preserve all users and histories. Download history retains the latest 200 successful downloads per user.
