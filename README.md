@@ -70,3 +70,12 @@ Create a Spotify Developer application, add the callback URL above, and provide 
 - Railway storage is ephemeral unless a volume is attached.
 - After Telegram caches a track, production code can reuse its `file_id` instead of downloading again.
 
+## Admin commands
+
+Only Telegram user `443036991` can use these commands in a private chat with the bot:
+
+- Reply to a text, photo, video, audio, or document, then send `/broadcast` to copy it to every recorded user.
+- `/users` lists recorded users with their download counts.
+- `/history <@username|user_id>` shows that user's recent successful downloads.
+
+Download history begins after this version is deployed and retains the latest 200 downloads per user.
