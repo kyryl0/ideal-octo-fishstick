@@ -441,7 +441,7 @@ async function downloadYoutubeAudio(track) {
 }
 
 function shouldRetryWithCookies(error) {
-  return /sign in|not a bot|confirm you|age.restricted|private|members.only|\\b403\\b|forbidden/i.test(
+  return /sign in|not a bot|confirm you|authentication|cookies?|age.restricted|private|members.only|\\b403\\b|forbidden/i.test(
     String(error?.message || error)
   );
 }
@@ -585,7 +585,7 @@ async function getYoutubeInlineTrack(queryText) {
   if (!youtubeUrl) return undefined;
 
   const youtubeId = getYoutubeVideoId(youtubeUrl);
-  const normalizedUrl = youtubeId ? "https://music.youtube.com/watch?v=" + youtubeId : youtubeUrl;
+  const normalizedUrl = youtubeId ? "https://www.youtube.com/watch?v=" + youtubeId : youtubeUrl;
   const metadata = await getYoutubeMetadata(normalizedUrl);
   return {
     source: "youtube",
