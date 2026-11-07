@@ -577,6 +577,7 @@ audio_path.rename(output_dir / (payload["fileBase"] + ".mp3"))
       errors.push(command + ": " + String(err.stderr || err.message).slice(-1200));
     }
   }
+  console.error("ytconverter downloader details:", errors.join("\\n---\\n"));
   throw new Error("ytconverter download failed: " + errors.join("; ").slice(-1200));
 }
 
